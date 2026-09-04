@@ -716,6 +716,7 @@ class NoApiFacebookTracker:
                 default_caption = clean_unicode(msg_m.group(1)) if msg_m else ""
 
                 discovered_pids = []
+                # 1. Post ID chuẩn
                 for pid in re.findall(r'"post_id":"(\d+)"', html_desk):
                     if pid != page_id and len(pid) >= 10 and pid not in seen_post_ids:
                         seen_post_ids.add(pid)
@@ -730,6 +731,36 @@ class NoApiFacebookTracker:
                     if p_match != page_id and len(p_match) >= 10 and p_match not in seen_post_ids:
                         seen_post_ids.add(p_match)
                         discovered_pids.append(p_match)
+
+                # 2. Ảnh bài đăng & Ảnh đại diện (Profile Photo Post)
+                for pp in re.findall(r'"profilePhoto":\{.*?"id":"(\d+)"', html_desk):
+                    if pp != page_id and len(pp) >= 10 and pp not in seen_post_ids:
+                        seen_post_ids.add(pp)
+                        discovered_pids.append(pp)
+
+                # 3. Ảnh bìa (Cover Photo Post)
+                for cp in re.findall(r'"cover_photo":\{.*?"photo":\{.*?"id":"(\d+)"', html_desk):
+                    if cp != page_id and len(cp) >= 10 and cp not in seen_post_ids:
+                        seen_post_ids.add(cp)
+                        discovered_pids.append(cp)
+
+                # 4. Photo posts fbid (ví dụ photo/?fbid=...)
+                for fbid in re.findall(r'photo\/\?fbid=(\d+)', html_desk):
+                    if fbid != page_id and len(fbid) >= 10 and fbid not in seen_post_ids:
+                        seen_post_ids.add(fbid)
+                        discovered_pids.append(fbid)
+
+                # 5. Videos
+                for vid in re.findall(r'/videos/(\d+)', html_desk):
+                    if vid != page_id and len(vid) >= 10 and vid not in seen_post_ids:
+                        seen_post_ids.add(vid)
+                        discovered_pids.append(vid)
+
+                # 6. Story fbid
+                for sfbid in re.findall(r'story_fbid=(\d+)', html_desk):
+                    if sfbid != page_id and len(sfbid) >= 10 and sfbid not in seen_post_ids:
+                        seen_post_ids.add(sfbid)
+                        discovered_pids.append(sfbid)
 
                 for pid in discovered_pids:
                     purl = f"https://www.facebook.com/{page_id}/posts/{pid}" if page_id else f"https://www.facebook.com/{pid}"

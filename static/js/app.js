@@ -251,6 +251,7 @@ let currentSelectedPostIndex = 0;
 let currentPostFilterType = 'all';
 
 function renderResults(data) {
+  trackingData = data;
   allPostsDetails = data.posts_details || [];
   allUsersDirectory = data.users_directory || [];
   
@@ -469,6 +470,7 @@ function renderUsersDirectoryTable(searchQuery = '') {
     if (rate < 30) rateColor = '#f87171';
     else if (rate < 70) rateColor = '#fbbf24';
 
+    const totalScanned = (allPostsDetails && allPostsDetails.length > 0) ? allPostsDetails.length : (trackingData && trackingData.total_posts ? trackingData.total_posts : 1);
     html += `
       <tr style="border-bottom: 1px solid var(--border-subtle);">
         <td style="padding: 10px 14px; color: var(--text-muted); font-family: var(--font-mono);">${idx + 1}</td>
@@ -499,7 +501,7 @@ function renderUsersDirectoryTable(searchQuery = '') {
         </td>
         <td style="padding: 10px 14px; text-align: center;">
           <div style="font-weight: 700; color: ${rateColor}; font-size: 0.85rem;">${rate}%</div>
-          <div style="font-size: 0.72rem; color: var(--text-muted);">${u.distinct_posts_count}/${trackingData ? trackingData.total_posts : 0} bài</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted);">${u.distinct_posts_count}/${totalScanned} bài</div>
           <div style="width: 100%; background: rgba(255,255,255,0.08); height: 5px; border-radius: 3px; margin-top: 3px; overflow: hidden;">
             <div style="width: ${rate}%; background: ${rateColor}; height: 100%;"></div>
           </div>

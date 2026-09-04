@@ -190,12 +190,73 @@ async function startTracking() {
   }
 }
 
+let allPostsDetails = [];
+let currentSelectedPostIndex = 0;
+let currentPostFilterType = 'all';
+
 function renderResults(data) {
-  // 1. Tab Chi tiết thành viên
+  allPostsDetails = data.posts_details || [];
+  
+  // 1. Cập nhật tiêu đề & tab mặc định
+  const countEl = document.getElementById('inspector-posts-count');
+  if (countEl) countEl.innerText = `${allPostsDetails.length} bài viết đã quét`;
+
+  const noticeNoMem = document.getElementById('notice-no-members');
+  const tabBtnMem = document.getElementById('tab-btn-members');
+  const tabBtnStr = document.getElementById('tab-btn-strangers');
+
+  if (!data.has_members) {
+    if (noticeNoMem) noticeNoMem.style.display = 'block';
+    if (tabBtnMem) tabBtnMem.style.opacity = '0.6';
+    if (tabBtnStr) tabBtnStr.style.opacity = '0.6';
+    switchResultTab('inspector');
+  } else {
+    if (noticeNoMem) noticeNoMem.style.display = 'none';
+    if (tabBtnMem) tabBtnMem.style.opacity = '1';
+    if (tabBtnStr) tabBtnStr.style.opacity = '1';
+    switchResultTab('inspector');
+  }
+
+  // 2. Render danh sách các thẻ bài viết (Post Cards)
+  const cardsContainer = document.getElementById('inspector-post-cards');
+  if (cardsContainer) {
+    if (allPostsDetails.length === 0) {
+      cardsContainer.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem;">Không có bài viết nào được quét.</div>';
+    } else {
+      let cardsHtml = '';
+      allPostsDetails.forEach((p, idx) => {
+        cardsHtml += `
+          <div class="post-item-card" id="post-card-${idx}" onclick="selectInspectorPost(${idx})" 
+               style="background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px; cursor: pointer; transition: all 0.2s;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-weight: 700; color: #38bdf8; font-size: 0.82rem;">Mục #${idx + 1}</span>
+              ${p.permalink_url ? `<a href="${p.permalink_url}" target="_blank" onclick="event.stopPropagation()" style="font-size: 0.72rem; color: #94a3b8;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Mở FB</a>` : ''}
+            </div>
+            <div style="font-weight: 600; font-size: 0.85rem; color: #fff; line-height: 1.35; margin-bottom: 8px; height: 38px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+              ${escapeHtml(p.mo_ta || p.post_id)}
+            </div>
+            <div style="display: flex; gap: 6px; font-size: 0.75rem; flex-wrap: wrap;">
+              <span style="color: #f87171; background: rgba(239, 68, 68, 0.15); padding: 1px 6px; border-radius: 4px; font-weight: 600;">❤️ ${p.likes_count}</span>
+              <span style="color: #38bdf8; background: rgba(56, 189, 248, 0.15); padding: 1px 6px; border-radius: 4px; font-weight: 600;">💬 ${p.comments_count}</span>
+              <span style="color: #fbbf24; background: rgba(245, 158, 11, 0.15); padding: 1px 6px; border-radius: 4px; font-weight: 600;">🔁 ${p.shares_count}</span>
+            </div>
+          </div>
+        `;
+      });
+      cardsContainer.innerHTML = cardsHtml;
+    }
+  }
+
+  // Tự động chọn bài đầu tiên
+  if (allPostsDetails.length > 0) {
+    selectInspectorPost(0);
+  }
+
+  // 3. Render Tab Đối soát Thành viên (nếu có)
   const memBody = document.getElementById('table-members-body');
   if (memBody && data.match_results) {
     if (data.match_results.length === 0) {
-      memBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">Không có thành viên nào trong danh sách</td></tr>';
+      memBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: var(--text-muted);">Không có thành viên nào (Chưa nạp file Excel thành viên)</td></tr>';
     } else {
       let html = '';
       data.match_results.forEach(r => {
@@ -233,11 +294,11 @@ function renderResults(data) {
     }
   }
 
-  // 2. Tab Người lạ tương tác
+  // 4. Render Tab Người ngoài nhóm
   const strBody = document.getElementById('table-strangers-body');
   if (strBody && data.strangers) {
     if (data.strangers.length === 0) {
-      strBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">Không phát hiện người lạ tương tác</td></tr>';
+      strBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">Không phát hiện người ngoài nhóm hoặc chưa nạp danh sách thành viên</td></tr>';
     } else {
       let html = '';
       data.strangers.forEach(s => {
@@ -261,27 +322,25 @@ function renderResults(data) {
     }
   }
 
-  // 3. Tab Tổng hợp bài viết
+  // 5. Render Tab Tổng hợp bài viết
   const postBody = document.getElementById('table-posts-body');
   if (postBody && data.post_summary) {
     let html = '';
-    data.post_summary.forEach(p => {
+    data.post_summary.forEach((p, pIdx) => {
       html += `
         <tr style="border-bottom: 1px solid var(--border-subtle);">
-          <td style="padding: 10px 14px; font-weight: 600; color: #fff;">${escapeHtml(p.mo_ta || p.post_id)}</td>
+          <td style="padding: 10px 14px; font-weight: 600; color: #38bdf8; font-family: var(--font-mono);">#${p.post_id}</td>
           <td style="padding: 10px 14px;">
-            ${p.permalink_url ? `<a href="${p.permalink_url}" target="_blank" style="color: #38bdf8;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Mở bài viết</a>` : '-'}
+            <div style="font-weight: 600; color: #fff;">${escapeHtml(p.mo_ta || p.post_id)}</div>
+            ${p.permalink_url ? `<a href="${p.permalink_url}" target="_blank" style="color: #38bdf8; font-size: 0.78rem;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Mở bài viết trên Facebook</a>` : ''}
           </td>
-          <td style="padding: 10px 14px; text-align: center; color: #ef4444; font-weight: 700;">${p.likes_count}</td>
-          <td style="padding: 10px 14px; text-align: center; color: #38bdf8; font-weight: 700;">${p.comments_count}</td>
-          <td style="padding: 10px 14px; text-align: center; color: #f59e0b; font-weight: 700;">${p.shares_count}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #ef4444; font-weight: 700;">❤️ ${p.likes_count}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #38bdf8; font-weight: 700;">💬 ${p.comments_count}</td>
+          <td style="padding: 10px 14px; text-align: center; color: #f59e0b; font-weight: 700;">🔁 ${p.shares_count}</td>
           <td style="padding: 10px 14px; text-align: center;">
-            <div style="display: flex; align-items: center; justify-content: center; gap: 6px;">
-              <div style="width: 50px; background: rgba(255,255,255,0.1); border-radius: 4px; height: 6px; overflow: hidden;">
-                <div style="width: ${p.completion_rate}%; background: #10b981; height: 100%;"></div>
-              </div>
-              <span style="font-weight: 700; color: #34d399; font-size: 0.8rem;">${p.completion_rate}%</span>
-            </div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="selectInspectorPost(${pIdx}); switchResultTab('inspector');" style="border-color: #38bdf8; color: #38bdf8; font-size: 0.75rem;">
+              <i class="fa-solid fa-eye"></i> Xem người tương tác
+            </button>
           </td>
         </tr>
       `;
@@ -290,27 +349,230 @@ function renderResults(data) {
   }
 }
 
+// Bấm chọn xem tương tác của một bài viết cụ thể
+function selectInspectorPost(index) {
+  if (!allPostsDetails || index < 0 || index >= allPostsDetails.length) return;
+  currentSelectedPostIndex = index;
+
+  // Highlight card
+  document.querySelectorAll('.post-item-card').forEach((c, idx) => {
+    if (idx === index) {
+      c.style.border = '2px solid #38bdf8';
+      c.style.background = 'rgba(56, 189, 248, 0.12)';
+    } else {
+      c.style.border = '1px solid var(--border-subtle)';
+      c.style.background = 'rgba(30, 41, 59, 0.7)';
+    }
+  });
+
+  const post = allPostsDetails[index];
+  document.getElementById('active-post-badge').innerText = `MỤC #${index + 1} (POST ID: ${post.post_id})`;
+  document.getElementById('active-post-title').innerText = post.mo_ta || `Bài viết ID ${post.post_id}`;
+
+  const linkBox = document.getElementById('active-post-link-container');
+  if (linkBox) {
+    if (post.permalink_url) {
+      linkBox.innerHTML = `<a href="${post.permalink_url}" target="_blank" style="color: #38bdf8; font-size: 0.8rem;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Mở bài viết gốc trên Facebook</a>`;
+    } else {
+      linkBox.innerHTML = '';
+    }
+  }
+
+  // Cập nhật số đếm
+  document.getElementById('active-cnt-like').innerText = post.likes_count || 0;
+  document.getElementById('active-cnt-comment').innerText = post.comments_count || 0;
+  document.getElementById('active-cnt-share').innerText = post.shares_count || 0;
+
+  const totalInteractions = (post.likes_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
+  document.getElementById('filter-cnt-all').innerText = totalInteractions;
+  document.getElementById('filter-cnt-like').innerText = post.likes_count || 0;
+  document.getElementById('filter-cnt-comment').innerText = post.comments_count || 0;
+  document.getElementById('filter-cnt-share').innerText = post.shares_count || 0;
+
+  // Reset filter và search
+  currentPostFilterType = 'all';
+  updateFilterButtonsUI('all');
+  const searchInput = document.getElementById('input-search-post-interactions');
+  if (searchInput) searchInput.value = '';
+
+  renderCurrentPostTable();
+}
+
+// Render bảng danh sách người thả tim, comment, share của bài đang chọn
+function renderCurrentPostTable(searchQuery = '') {
+  const tableBody = document.getElementById('table-inspector-body');
+  if (!tableBody || !allPostsDetails[currentSelectedPostIndex]) return;
+
+  const post = allPostsDetails[currentSelectedPostIndex];
+  const list = [];
+
+  // 1. Thêm lượt Like
+  if (post.reactions && Array.isArray(post.reactions)) {
+    post.reactions.forEach(r => {
+      list.push({
+        type: 'like',
+        typeLabel: `Thả tim (${r.type || 'LIKE'})`,
+        typeColor: '#ef4444',
+        typeBg: 'rgba(239, 68, 68, 0.15)',
+        name: r.name || 'Người dùng Facebook',
+        id: r.id || r.user_id || '',
+        url: r.profile_url || (r.id ? `https://facebook.com/${r.id}` : ''),
+        detail: `Thả cảm xúc ${r.type || 'LIKE'}`,
+        time: '-'
+      });
+    });
+  }
+
+  // 2. Thêm bình luận
+  if (post.comments && Array.isArray(post.comments)) {
+    post.comments.forEach(c => {
+      const cId = c.from_id || c.id || '';
+      list.push({
+        type: 'comment',
+        typeLabel: 'Bình luận',
+        typeColor: '#38bdf8',
+        typeBg: 'rgba(56, 189, 248, 0.15)',
+        name: c.from_name || c.name || 'Người dùng Facebook',
+        id: cId,
+        url: cId ? `https://facebook.com/${cId}` : '',
+        detail: c.message || '(Không có nội dung chữ)',
+        time: c.created_time || '-'
+      });
+    });
+  }
+
+  // 3. Thêm lượt chia sẻ
+  if (post.shares && Array.isArray(post.shares)) {
+    post.shares.forEach(s => {
+      const sId = s.id || s.user_id || '';
+      list.push({
+        type: 'share',
+        typeLabel: 'Chia sẻ',
+        typeColor: '#fbbf24',
+        typeBg: 'rgba(245, 158, 11, 0.15)',
+        name: s.name || 'Người dùng Facebook',
+        id: sId,
+        url: sId ? `https://facebook.com/${sId}` : '',
+        detail: 'Chia sẻ bài viết công khai',
+        time: '-'
+      });
+    });
+  }
+
+  // Áp dụng bộ lọc loại tương tác
+  let filtered = list;
+  if (currentPostFilterType !== 'all') {
+    filtered = filtered.filter(item => item.type === currentPostFilterType);
+  }
+
+  // Áp dụng bộ lọc tìm kiếm
+  const q = (searchQuery || '').toLowerCase().trim();
+  if (q) {
+    filtered = filtered.filter(item => 
+      item.name.toLowerCase().includes(q) || 
+      item.id.toLowerCase().includes(q) || 
+      item.detail.toLowerCase().includes(q)
+    );
+  }
+
+  if (filtered.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Không tìm thấy người tương tác nào ${currentPostFilterType !== 'all' ? `cho mục này` : ''}</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  filtered.forEach((item, idx) => {
+    const initial = (item.name[0] || 'U').toUpperCase();
+    html += `
+      <tr style="border-bottom: 1px solid var(--border-subtle);">
+        <td style="padding: 10px 14px; color: var(--text-muted); font-family: var(--font-mono);">${idx + 1}</td>
+        <td style="padding: 10px 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 24px; height: 24px; border-radius: 50%; background: ${item.typeColor}; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700;">
+              ${initial}
+            </div>
+            <div>
+              ${item.url ? `<a href="${item.url}" target="_blank" style="font-weight: 700; color: #fff; font-size: 0.88rem;">${escapeHtml(item.name)}</a>` : `<span style="font-weight: 700; color: #fff;">${escapeHtml(item.name)}</span>`}
+            </div>
+          </div>
+        </td>
+        <td style="padding: 10px 14px; font-family: var(--font-mono); font-size: 0.8rem; color: #93c5fd;">
+          ${item.id ? escapeHtml(item.id) : '<span style="color: var(--text-muted);">-</span>'}
+        </td>
+        <td style="padding: 10px 14px; text-align: center;">
+          <span style="background: ${item.typeBg}; color: ${item.typeColor}; border: 1px solid ${item.typeColor}40; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600;">
+            ${escapeHtml(item.typeLabel)}
+          </span>
+        </td>
+        <td style="padding: 10px 14px; color: #e2e8f0; font-size: 0.82rem; max-width: 320px; line-height: 1.4;">
+          ${escapeHtml(item.detail)}
+        </td>
+        <td style="padding: 10px 14px; color: var(--text-muted); font-size: 0.78rem;">${escapeHtml(item.time)}</td>
+      </tr>
+    `;
+  });
+
+  tableBody.innerHTML = html;
+}
+
+function filterCurrentPostInteractions(type) {
+  currentPostFilterType = type;
+  updateFilterButtonsUI(type);
+  const searchInput = document.getElementById('input-search-post-interactions');
+  const query = searchInput ? searchInput.value : '';
+  renderCurrentPostTable(query);
+}
+
+function updateFilterButtonsUI(activeType) {
+  const btnAll = document.getElementById('btn-post-filter-all');
+  const btnLike = document.getElementById('btn-post-filter-like');
+  const btnComment = document.getElementById('btn-post-filter-comment');
+  const btnShare = document.getElementById('btn-post-filter-share');
+
+  [btnAll, btnLike, btnComment, btnShare].forEach(b => {
+    if (b) b.className = 'btn btn-sm btn-secondary';
+  });
+
+  if (activeType === 'all' && btnAll) btnAll.className = 'btn btn-sm btn-primary';
+  if (activeType === 'like' && btnLike) btnLike.className = 'btn btn-sm btn-primary';
+  if (activeType === 'comment' && btnComment) btnComment.className = 'btn btn-sm btn-primary';
+  if (activeType === 'share' && btnShare) btnShare.className = 'btn btn-sm btn-primary';
+}
+
+function searchCurrentPostInteractions(query) {
+  renderCurrentPostTable(query);
+}
+
 function switchResultTab(tabName) {
+  const tabInspector = document.getElementById('tab-view-inspector');
   const tabMembers = document.getElementById('tab-view-members');
   const tabStrangers = document.getElementById('tab-view-strangers');
   const tabPosts = document.getElementById('tab-view-posts');
 
+  const btnInspector = document.getElementById('tab-btn-inspector');
   const btnMembers = document.getElementById('tab-btn-members');
   const btnStrangers = document.getElementById('tab-btn-strangers');
   const btnPosts = document.getElementById('tab-btn-posts');
 
-  [tabMembers, tabStrangers, tabPosts].forEach(t => t.style.display = 'none');
-  [btnMembers, btnStrangers, btnPosts].forEach(b => b.className = 'btn btn-sm btn-secondary');
+  [tabInspector, tabMembers, tabStrangers, tabPosts].forEach(t => {
+    if (t) t.style.display = 'none';
+  });
+  [btnInspector, btnMembers, btnStrangers, btnPosts].forEach(b => {
+    if (b) b.className = 'btn btn-sm btn-secondary';
+  });
 
-  if (tabName === 'members') {
+  if (tabName === 'inspector' && tabInspector) {
+    tabInspector.style.display = 'block';
+    if (btnInspector) btnInspector.className = 'btn btn-sm btn-primary';
+  } else if (tabName === 'members' && tabMembers) {
     tabMembers.style.display = 'block';
-    btnMembers.className = 'btn btn-sm btn-primary';
-  } else if (tabName === 'strangers') {
+    if (btnMembers) btnMembers.className = 'btn btn-sm btn-primary';
+  } else if (tabName === 'strangers' && tabStrangers) {
     tabStrangers.style.display = 'block';
-    btnStrangers.className = 'btn btn-sm btn-primary';
-  } else if (tabName === 'posts') {
+    if (btnStrangers) btnStrangers.className = 'btn btn-sm btn-primary';
+  } else if (tabName === 'posts' && tabPosts) {
     tabPosts.style.display = 'block';
-    btnPosts.className = 'btn btn-sm btn-primary';
+    if (btnPosts) btnPosts.className = 'btn btn-sm btn-primary';
   }
 }
 

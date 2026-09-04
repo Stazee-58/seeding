@@ -1,9 +1,7 @@
 """
-report.py — Xuất báo cáo Excel 4 sheet từ kết quả đối chiếu không cần API:
-  1. Chi_tiet_Thanh_vien — Mỗi dòng là 1 cặp (bài đăng × thành viên), chi tiết comment, like, share
-  2. Nguoi_la_tuong_tac  — Danh sách người ngoài nhóm tương tác (comment / like / thả tim / share)
-  3. Tong_hop_bai        — Mỗi dòng là 1 bài đăng, thống kê thành viên vs người lạ
-  4. Can_nhac_nho        — Thành viên chưa tương tác đối với các bài viết
+report.py — Xuất báo cáo Excel linh hoạt từ kết quả đối chiếu không cần API:
+  - Trường hợp 1: Có danh sách thành viên -> Xuất 4 sheet đối soát thành viên, người lạ, tổng hợp bài, nhắc nhở.
+  - Trường hợp 2: KHÔNG có danh sách thành viên -> Xuất chi tiết toàn bộ người Like/Tim, Comment, Share theo từng bài viết.
 """
 
 from __future__ import annotations
@@ -68,83 +66,135 @@ def generate_excel_report(
     match_results: list[dict[str, Any]],
     stranger_results: list[dict[str, Any]],
     collected: dict[str, dict[str, Any]],
+    has_members: bool = False,
     output_dir: str = "",
 ) -> str:
-    """Tạo file Excel báo cáo hoàn chỉnh."""
+    """Tạo file Excel báo cáo hoàn chỉnh 100% dữ liệu thực tế."""
     wb = Workbook()
     wb.remove(wb.active)  # Xoá sheet mặc định
 
-    # -------------------------------------------------------------------------
-    # Sheet 1: Chi tiết thành viên
-    # -------------------------------------------------------------------------
-    ws1 = wb.create_sheet(title="Chi_tiet_Thanh_vien")
-    h1 = [
-        "STT", "Họ và tên", "Facebook ID", "Tên hiển thị",
-        "Mô tả bài đăng", "Link bài",
-        "Đã like/tim?", "Loại cảm xúc",
-        "Đã comment?", "Số comment", "Nội dung comment", "Thời gian comment",
-        "Đã share?", "Trạng thái tương tác", "Cách đối chiếu",
-    ]
-    _write_header(ws1, h1)
-
-    for idx, r in enumerate(match_results, start=1):
-        st = r.get("trang_thai", "")
-        if st in ("da_tat_ca", "da_comment_va_like"):
-            row_fill = _DONE_BOTH_FILL
-            st_text = "Đầy đủ"
-        elif st in ("da_comment", "da_like", "da_share", "da_comment_va_share", "da_like_va_share"):
-            row_fill = _DONE_PART_FILL
-            st_text = "Chưa đủ (1 phần)"
-        else:
-            row_fill = _RED_FILL
-            st_text = "Chưa tương tác"
-
-        row_vals = [
-            idx,
-            r.get("ho_ten", ""),
-            r.get("facebook_id", ""),
-            r.get("ten_hien_thi", ""),
-            r.get("mo_ta", ""),
-            r.get("permalink_url", ""),
-            "Đã Like" if r.get("da_like") else "Chưa",
-            r.get("loai_reaction", ""),
-            "Đã Comment" if r.get("da_comment") else "Chưa",
-            r.get("so_comment", 0),
-            r.get("noi_dung_comment", ""),
-            r.get("thoi_gian_comment", ""),
-            "Đã Share" if r.get("da_share") else "Chưa",
-            st_text,
-            r.get("cach_doi_chieu", ""),
+    if has_members and match_results:
+        # =====================================================================
+        # TRƯỜNG HỢP 1: CÓ DANH SÁCH THÀNH VIÊN ĐỐI SOÁT
+        # =====================================================================
+        ws1 = wb.create_sheet(title="Chi_tiet_Thanh_vien")
+        h1 = [
+            "STT", "Họ và tên", "Facebook ID", "Tên hiển thị",
+            "Mô tả bài đăng", "Link bài",
+            "Đã like/tim?", "Loại cảm xúc",
+            "Đã comment?", "Số comment", "Nội dung comment", "Thời gian comment",
+            "Đã share?", "Trạng thái tương tác", "Cách đối chiếu",
         ]
-        _write_row(ws1, idx + 1, row_vals, fill=row_fill)
+        _write_header(ws1, h1)
 
-    _auto_fit_columns(ws1)
+        for idx, r in enumerate(match_results, start=1):
+            st = r.get("trang_thai", "")
+            if st in ("da_tat_ca", "da_comment_va_like"):
+                row_fill = _DONE_BOTH_FILL
+                st_text = "Đầy đủ"
+            elif st in ("da_comment", "da_like", "da_share", "da_comment_va_share", "da_like_va_share"):
+                row_fill = _DONE_PART_FILL
+                st_text = "Chưa đủ (1 phần)"
+            else:
+                row_fill = _RED_FILL
+                st_text = "Chưa tương tác"
 
-    # -------------------------------------------------------------------------
-    # Sheet 2: Người lạ tương tác
-    # -------------------------------------------------------------------------
-    ws2 = wb.create_sheet(title="Nguoi_la_tuong_tac")
-    h2 = ["STT", "Mô tả bài đăng", "Link bài", "Tên người lạ", "Facebook ID / Link", "Loại tương tác", "Nội dung tương tác", "Thời gian"]
-    _write_header(ws2, h2)
+            row_vals = [
+                idx,
+                r.get("ho_ten", ""),
+                r.get("facebook_id", ""),
+                r.get("ten_hien_thi", ""),
+                r.get("mo_ta", ""),
+                r.get("permalink_url", ""),
+                "Đã Like" if r.get("da_like") else "Chưa",
+                r.get("loai_reaction", ""),
+                "Đã Comment" if r.get("da_comment") else "Chưa",
+                r.get("so_comment", 0),
+                r.get("noi_dung_comment", ""),
+                r.get("thoi_gian_comment", ""),
+                "Đã Share" if r.get("da_share") else "Chưa",
+                st_text,
+                r.get("cach_doi_chieu", ""),
+            ]
+            _write_row(ws1, idx + 1, row_vals, fill=row_fill)
+        _auto_fit_columns(ws1)
 
-    for idx, s in enumerate(stranger_results, start=1):
-        row_vals = [
-            idx,
-            s.get("mo_ta", ""),
-            s.get("permalink_url", ""),
-            s.get("nguoi_dung", ""),
-            s.get("facebook_id", ""),
-            s.get("loai_tuong_tac", ""),
-            s.get("noi_dung", ""),
-            s.get("thoi_gian", ""),
-        ]
-        _write_row(ws2, idx + 1, row_vals, fill=_STRANGER_FILL)
+        # Sheet 2: Người lạ tương tác
+        ws2 = wb.create_sheet(title="Nguoi_la_tuong_tac")
+        h2 = ["STT", "Mô tả bài đăng", "Link bài", "Tên người lạ", "Facebook ID / Link", "Loại tương tác", "Nội dung tương tác", "Thời gian"]
+        _write_header(ws2, h2)
+        for idx, s in enumerate(stranger_results, start=1):
+            row_vals = [
+                idx, s.get("mo_ta", ""), s.get("permalink_url", ""),
+                s.get("nguoi_dung", ""), s.get("facebook_id", ""),
+                s.get("loai_tuong_tac", ""), s.get("noi_dung", ""), s.get("thoi_gian", "")
+            ]
+            _write_row(ws2, idx + 1, row_vals, fill=_STRANGER_FILL)
+        _auto_fit_columns(ws2)
 
-    _auto_fit_columns(ws2)
+        # Sheet 3: Cần nhắc nhở
+        ws4 = wb.create_sheet(title="Can_nhac_nho")
+        h4 = ["STT", "Họ và tên", "Facebook ID", "Tên hiển thị", "Bài chưa làm", "Link bài"]
+        _write_header(ws4, h4)
+        remind_idx = 1
+        for r in match_results:
+            if r.get("trang_thai") == "chua_tuong_tac":
+                row_vals = [
+                    remind_idx, r.get("ho_ten", ""), r.get("facebook_id", ""),
+                    r.get("ten_hien_thi", ""), r.get("mo_ta", ""), r.get("permalink_url", "")
+                ]
+                _write_row(ws4, remind_idx + 1, row_vals, fill=_RED_FILL)
+                remind_idx += 1
+        _auto_fit_columns(ws4)
 
-    # -------------------------------------------------------------------------
-    # Sheet 3: Tổng hợp bài viết
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # SHEET CHI TIẾT TỪNG NGƯỜI TƯƠNG TÁC (TIM, CMT, SHARE) THEO TỪNG BÀI
+    # =========================================================================
+    ws_all = wb.create_sheet(title="Chi_tiet_tuong_tac_bai")
+    h_all = ["STT", "Bài đăng", "Link bài", "Loại tương tác", "Tên người dùng Facebook", "Facebook ID / Link Profile", "Cảm xúc / Nội dung Comment", "Thời gian"]
+    _write_header(ws_all, h_all)
+
+    row_count = 1
+    for pid, pdata in collected.items():
+        mo_ta = pdata.get("mo_ta", f"Bài {pid}")
+        p_url = pdata.get("permalink_url", "")
+
+        # 1. Danh sách Like / Thả tim
+        for r in pdata.get("reactions", []):
+            row_count += 1
+            r_name = r.get("name", "")
+            r_id = r.get("id", "") or r.get("user_id", "")
+            r_type = r.get("type", "") or r.get("reaction_type", "LIKE")
+            r_url = r.get("profile_url", "") or (f"https://facebook.com/{r_id}" if r_id else "")
+            _write_row(ws_all, row_count, [
+                row_count - 1, mo_ta, p_url, f"Thả tim ({r_type})", r_name, r_url or r_id, f"Cảm xúc {r_type}", ""
+            ])
+
+        # 2. Danh sách Comment
+        for c in pdata.get("comments", []):
+            row_count += 1
+            c_name = c.get("from_name", "") or c.get("name", "")
+            c_id = c.get("from_id", "") or c.get("id", "")
+            c_msg = c.get("message", "")
+            c_time = c.get("created_time", "")
+            c_url = f"https://facebook.com/{c_id}" if c_id else ""
+            _write_row(ws_all, row_count, [
+                row_count - 1, mo_ta, p_url, "Bình luận", c_name, c_url or c_id, c_msg, c_time
+            ])
+
+        # 3. Danh sách Share
+        for s in pdata.get("shares", []):
+            row_count += 1
+            s_name = s.get("name", "")
+            s_id = s.get("id", "") or s.get("user_id", "")
+            s_url = f"https://facebook.com/{s_id}" if s_id else ""
+            _write_row(ws_all, row_count, [
+                row_count - 1, mo_ta, p_url, "Chia sẻ", s_name, s_url or s_id, "Chia sẻ bài viết", ""
+            ])
+
+    _auto_fit_columns(ws_all)
+
+    # Sheet: Tổng hợp bài viết
     ws3 = wb.create_sheet(title="Tong_hop_bai")
     h3 = ["STT", "ID bài đăng", "Mô tả bài", "Link bài", "Lượt Like thực tế", "Lượt Comment thực tế", "Lượt Share thực tế"]
     _write_header(ws3, h3)
@@ -162,29 +212,6 @@ def generate_excel_report(
         _write_row(ws3, idx + 1, row_vals)
 
     _auto_fit_columns(ws3)
-
-    # -------------------------------------------------------------------------
-    # Sheet 4: Cần nhắc nhở (Chưa tương tác)
-    # -------------------------------------------------------------------------
-    ws4 = wb.create_sheet(title="Can_nhac_nho")
-    h4 = ["STT", "Họ và tên", "Facebook ID", "Tên hiển thị", "Bài chưa làm", "Link bài"]
-    _write_header(ws4, h4)
-
-    remind_idx = 1
-    for r in match_results:
-        if r.get("trang_thai") == "chua_tuong_tac":
-            row_vals = [
-                remind_idx,
-                r.get("ho_ten", ""),
-                r.get("facebook_id", ""),
-                r.get("ten_hien_thi", ""),
-                r.get("mo_ta", ""),
-                r.get("permalink_url", ""),
-            ]
-            _write_row(ws4, remind_idx + 1, row_vals, fill=_RED_FILL)
-            remind_idx += 1
-
-    _auto_fit_columns(ws4)
 
     # Lưu file
     if not output_dir:

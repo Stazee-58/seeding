@@ -150,6 +150,23 @@ def extract_post_id_from_url(url: str) -> Optional[str]:
     return None
 
 
+def is_page_or_profile_url(url: str) -> bool:
+    """Kiểm tra URL có phải là link Fanpage/Trang thay vì link 1 bài viết cụ thể."""
+    if not url:
+        return False
+    # Nếu đã có post id thì không phải là trang chung
+    if extract_post_id_from_url(url):
+        # Ngoại lệ: profile.php?id=... không có story_fbid
+        if "story_fbid" not in url and "permalink" not in url and "/posts/" not in url:
+            if "profile.php?id=" in url:
+                return True
+        return False
+
+    url_clean = url.split("?")[0].rstrip("/")
+    parts = [p for p in url_clean.split("/") if p and "facebook.com" not in p and "http" not in p]
+    return len(parts) >= 1
+
+
 def clean_facebook_url(url: str) -> str:
     """Loại bỏ các tham số tracking thừa của Facebook."""
     if not url:
@@ -440,7 +457,39 @@ class NoApiFacebookTracker:
         return shares
 
     # -------------------------------------------------------------------------
-    # 4. Quét Toàn Diện Một Hoặc Nhiều Bài Đăng
+    # 4. Cào Danh Sách Bài Viết Từ Fanpage/Trang
+    # -------------------------------------------------------------------------
+    def fetch_page_post_urls(self, page_url: str, limit: int = 15) -> List[str]:
+        """
+        Cào danh sách link các bài viết mới nhất từ link Fanpage/Trang trên mbasic.
+        """
+        post_urls: List[str] = []
+        page_clean = page_url.split("?")[0].rstrip("/")
+        page_id_or_handle = page_clean.split("/")[-1]
+        target_url = f"https://mbasic.facebook.com/{page_id_or_handle}"
+        
+        self.log(f"🔎 Đang tìm các bài viết mới nhất trên Trang: {page_id_or_handle}...", "info")
+        try:
+            res = self.session.get(target_url, timeout=12)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, "html.parser")
+                for a in soup.find_all("a"):
+                    href = a.get("href", "")
+                    if ("story_fbid=" in href or "/posts/" in href or "/photos/" in href or "/videos/" in href) and "comment" not in href and "like" not in href:
+                        clean_href = href.split("&")[0] if "story_fbid" in href else href.split("?")[0]
+                        full_url = "https://www.facebook.com" + clean_href if clean_href.startswith("/") else clean_href
+                        if full_url not in post_urls:
+                            post_urls.append(full_url)
+                    if len(post_urls) >= limit:
+                        break
+        except Exception as e:
+            self.log(f"⚠️ Không thể đọc bài từ Trang {page_id_or_handle}: {e}", "warning")
+
+        self.log(f"📋 Tìm thấy {len(post_urls)} bài viết trên Trang.", "success")
+        return post_urls
+
+    # -------------------------------------------------------------------------
+    # 5. Quét Toàn Diện Một Hoặc Nhiều Bài Đăng
     # -------------------------------------------------------------------------
     def track_posts(
         self,
@@ -470,10 +519,25 @@ class NoApiFacebookTracker:
                 "post_id": post_id,
                 "post_url": url,
                 "message": f"Bài viết ID {post_id}",
+                "mo_ta": f"Bài viết ID {post_id}",
                 "reactions": [],
                 "comments": [],
                 "shares": [],
             }
+
+            # Lấy mô tả bài viết từ trang bài viết
+            try:
+                post_res = self.session.get(f"https://mbasic.facebook.com/{post_id}", timeout=10)
+                if post_res.status_code == 200:
+                    soup = BeautifulSoup(post_res.text, "html.parser")
+                    # Thử lấy tiêu đề hoặc nội dung văn bản đầu tiên
+                    content_div = soup.find("div", id=lambda i: i and "story" in i.lower()) or soup.find("p")
+                    if content_div and content_div.text.strip():
+                        txt = content_div.text.strip().replace("\n", " ")
+                        post_data["mo_ta"] = txt[:90] + ("..." if len(txt) > 90 else "")
+                        post_data["message"] = txt
+            except Exception:
+                pass
 
             if check_likes:
                 post_data["reactions"] = self.fetch_reactions(url, post_id)

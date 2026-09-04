@@ -297,32 +297,49 @@ def start_tracking():
             file_urls = parse_posts_excel(p_file)
             post_urls.extend(file_urls)
 
-    # Khử trùng lặp link
-    post_urls = list(dict.fromkeys(post_urls))
-    if not post_urls:
+    # Khử trùng lặp link ban đầu
+    raw_urls = list(dict.fromkeys(post_urls))
+    if not raw_urls:
         return jsonify({"success": False, "error": "Không tìm thấy link bài viết hợp lệ nào!"})
-
-    # Lấy danh sách thành viên
-    members = []
-    if "member_file" in request.files:
-        m_file = request.files["member_file"]
-        if m_file and m_file.filename:
-            members = parse_members_excel(m_file)
-
-    # Nếu không có file thành viên thì đọc file mẫu sẵn có
-    if not members:
-        sample_path = os.path.join(os.path.dirname(__file__), "members.xlsx")
-        if os.path.exists(sample_path):
-            members = parse_members_excel(sample_path)
 
     logs_list = []
     def log_cb(msg: str, lvl: str = "info"):
         logs_list.append({"msg": msg, "level": lvl})
 
-    # Tiến hành cào dữ liệu không cần API
     tracker = NoApiFacebookTracker(cookie_str=cookie_str, log_callback=log_cb)
+
+    # Kiểm tra nếu người dùng dán link Fanpage/Trang thay vì từng link bài -> tự động tìm bài trên trang
+    final_post_urls = []
+    for u in raw_urls:
+        if extract_post_id_from_url(u):
+            final_post_urls.append(u)
+        else:
+            # Có thể là link trang
+            page_posts = tracker.fetch_page_post_urls(u, limit=12)
+            if page_posts:
+                final_post_urls.extend(page_posts)
+            else:
+                final_post_urls.append(u)
+
+    final_post_urls = list(dict.fromkeys(final_post_urls))
+
+    # Lấy danh sách thành viên (CHỈ lấy khi người dùng tải file lên)
+    members = []
+    has_members = False
+    if "member_file" in request.files:
+        m_file = request.files["member_file"]
+        if m_file and m_file.filename:
+            members = parse_members_excel(m_file)
+            if members:
+                has_members = True
+                tracker.log(f"👥 Đã nạp {len(members)} thành viên từ file Excel để đối soát.", "info")
+
+    if not has_members:
+        tracker.log("ℹ️ Chế độ: Quét toàn bộ tương tác bài viết (Không có danh sách thành viên).", "info")
+
+    # Tiến hành cào dữ liệu thực tế 100% không cần API
     raw_posts_data = tracker.track_posts(
-        post_urls=post_urls,
+        post_urls=final_post_urls,
         check_likes=check_likes,
         check_comments=check_comments,
         check_shares=check_shares,
@@ -330,19 +347,42 @@ def start_tracking():
 
     # Chuẩn hoá sang dict collected
     collected = {}
+    posts_details = []
+
     for p in raw_posts_data:
         pid = p["post_id"]
+        mo_ta = p.get("mo_ta", f"Bài ID {pid}")
+        p_url = p.get("post_url", "")
+        reacts = p.get("reactions", [])
+        cmts = p.get("comments", [])
+        shrs = p.get("shares", [])
+
         collected[pid] = {
-            "mo_ta": f"Bài ID {pid}",
-            "permalink_url": p["post_url"],
-            "comments": p["comments"],
-            "reactions": p["reactions"],
-            "shares": p["shares"],
+            "mo_ta": mo_ta,
+            "permalink_url": p_url,
+            "comments": cmts,
+            "reactions": reacts,
+            "shares": shrs,
         }
 
-    # Đối soát thành viên (100% dữ liệu thực)
-    match_results = match_all(members=members, collected=collected)
-    strangers = get_stranger_interactions(members=members, collected=collected)
+        posts_details.append({
+            "post_id": pid,
+            "mo_ta": mo_ta,
+            "permalink_url": p_url,
+            "likes_count": len(reacts),
+            "comments_count": len(cmts),
+            "shares_count": len(shrs),
+            "reactions": reacts,
+            "comments": cmts,
+            "shares": shrs,
+        })
+
+    # Đối soát thành viên nếu có
+    match_results = []
+    strangers = []
+    if has_members and members:
+        match_results = match_all(members=members, collected=collected)
+        strangers = get_stranger_interactions(members=members, collected=collected)
 
     # Thống kê bài viết
     post_summary = []
@@ -351,9 +391,8 @@ def start_tracking():
         cmts_cnt = len(pdata.get("comments", []))
         shares_cnt = len(pdata.get("shares", []))
 
-        # Tính tỷ lệ hoàn thành của thành viên
         total_mems = len(members)
-        if total_mems > 0:
+        if total_mems > 0 and match_results:
             done_cnt = sum(
                 1 for r in match_results 
                 if r["post_id"] == pid and r["trang_thai"] != "chua_tuong_tac"
@@ -372,11 +411,12 @@ def start_tracking():
             "completion_rate": rate,
         })
 
-    # Xuất file Excel báo cáo 4 sheets
+    # Xuất file Excel báo cáo (hỗ trợ cả có và không có thành viên)
     report_file_path = generate_excel_report(
         match_results=match_results,
         stranger_results=strangers,
         collected=collected,
+        has_members=has_members,
         output_dir=REPORTS_DIR,
     )
     report_filename = os.path.basename(report_file_path)
@@ -384,7 +424,7 @@ def start_tracking():
     # Lưu lịch sử
     database.add_tracking_history(
         user_id=user["id"],
-        campaign_name=f"Quét {len(collected)} bài",
+        campaign_name=f"Quét {len(collected)} bài ({'Có DS thành viên' if has_members else 'Xem tương tác tự do'})",
         post_count=len(collected),
         member_count=len(members),
         report_path=report_file_path,
@@ -392,9 +432,11 @@ def start_tracking():
 
     return jsonify({
         "success": True,
+        "has_members": has_members,
         "total_posts": len(collected),
         "total_members": len(members),
         "logs": logs_list,
+        "posts_details": posts_details,
         "match_results": match_results,
         "strangers": strangers,
         "post_summary": post_summary,

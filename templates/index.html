@@ -172,17 +172,19 @@
     </div>
   </div>
 
-  <!-- KẾT QUẢ TRACKING (3 TABS) -->
+  <!-- KẾT QUẢ TRACKING (CHIA BÀI VIẾT THÀNH CÁC MỤC & CHI TIẾT TƯƠNG TÁC) -->
   <div id="results-container" class="card" style="display: none; margin-bottom: 30px;">
     
     <!-- Header kết quả & Nút xuất file Excel -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 14px;">
       <div>
-        <h2 style="font-size: 1.3rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
-          <i class="fa-solid fa-chart-pie" style="color: #34d399;"></i>
-          <span>Kết Quả Đối Soát Tương Tác</span>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-list-check" style="color: #34d399;"></i>
+          <span id="results-title">Kết Quả Quét Tương Tác Facebook (100% Thật)</span>
         </h2>
-        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 2px;">Dữ liệu cào thực tế 100% từ Facebook.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 2px;" id="results-subtitle">
+          Dữ liệu cào thực tế từ Facebook — Không tạo dữ liệu ảo.
+        </p>
       </div>
 
       <div style="display: flex; gap: 10px;">
@@ -193,20 +195,113 @@
     </div>
 
     <!-- Tabs Navigation -->
-    <div style="display: flex; gap: 8px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px;">
-      <button type="button" class="btn btn-sm btn-primary" id="tab-btn-members" onclick="switchResultTab('members')">
-        <i class="fa-solid fa-users"></i> 1. Chi tiết Thành viên
+    <div style="display: flex; gap: 8px; margin-bottom: 18px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; flex-wrap: wrap;">
+      <button type="button" class="btn btn-sm btn-primary" id="tab-btn-inspector" onclick="switchResultTab('inspector')">
+        <i class="fa-solid fa-layer-group"></i> 1. Xem Từng Bài Viết (Chi tiết Tim, CMT, Share)
+      </button>
+      <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-members" onclick="switchResultTab('members')">
+        <i class="fa-solid fa-users"></i> 2. Đối soát Thành viên nhóm
       </button>
       <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-strangers" onclick="switchResultTab('strangers')">
-        <i class="fa-solid fa-user-group"></i> 2. Người lạ tương tác
+        <i class="fa-solid fa-user-group"></i> 3. Người ngoài nhóm
       </button>
       <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-posts" onclick="switchResultTab('posts')">
-        <i class="fa-solid fa-layer-group"></i> 3. Tổng hợp bài viết
+        <i class="fa-solid fa-table-list"></i> 4. Tổng hợp bài viết
       </button>
     </div>
 
-    <!-- TAB 1: CHI TIẾT THÀNH VIÊN -->
-    <div id="tab-view-members" style="overflow-x: auto;">
+    <!-- TAB 1: CHIA CÁC BÀI RA THÀNH CÁC MỤC & CHỌN XEM CHI TIẾT NGƯỜI TIM, SHARE, COMMENT -->
+    <div id="tab-view-inspector">
+      
+      <!-- Danh sách bài viết dạng thẻ chọn (Post Cards Selector) -->
+      <div style="margin-bottom: 16px;">
+        <div style="font-size: 0.88rem; font-weight: 700; color: #38bdf8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+          <span><i class="fa-solid fa-folder-tree"></i> BẤM CHỌN BÀI VIẾT ĐỂ XEM DANH SÁCH NGƯỜI TƯƠNG TÁC:</span>
+          <span id="inspector-posts-count" style="font-size: 0.8rem; color: var(--text-muted);">0 bài viết</span>
+        </div>
+        
+        <!-- Grid chứa các mục bài viết -->
+        <div id="inspector-post-cards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+          <!-- Render danh sách bài viết từ JS -->
+        </div>
+      </div>
+
+      <!-- Khung hiển thị chi tiết bài viết đang chọn -->
+      <div id="inspector-detail-box" style="background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: var(--radius-sm); padding: 18px; margin-top: 18px;">
+        
+        <!-- Header bài đang chọn -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
+          <div>
+            <div style="font-size: 0.75rem; font-weight: 700; color: #38bdf8; text-transform: uppercase;" id="active-post-badge">BÀI ĐANG CHỌN</div>
+            <h3 style="font-size: 1.1rem; font-weight: 800; color: #fff; margin-top: 2px;" id="active-post-title">Chưa chọn bài</h3>
+            <div style="margin-top: 4px;" id="active-post-link-container"></div>
+          </div>
+
+          <!-- Stats đếm -->
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="active-post-stats">
+            <span class="btn btn-sm btn-secondary" style="border-color: rgba(239, 68, 68, 0.4); color: #f87171; pointer-events: none;">
+              ❤️ <strong id="active-cnt-like">0</strong> Like
+            </span>
+            <span class="btn btn-sm btn-secondary" style="border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; pointer-events: none;">
+              💬 <strong id="active-cnt-comment">0</strong> Bình luận
+            </span>
+            <span class="btn btn-sm btn-secondary" style="border-color: rgba(245, 158, 11, 0.4); color: #fbbf24; pointer-events: none;">
+              🔁 <strong id="active-cnt-share">0</strong> Chia sẻ
+            </span>
+          </div>
+        </div>
+
+        <!-- Bộ lọc & Ô tìm kiếm người tương tác bài viết -->
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-sm btn-primary" id="btn-post-filter-all" onclick="filterCurrentPostInteractions('all')">
+              Tất cả (<span id="filter-cnt-all">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-post-filter-like" onclick="filterCurrentPostInteractions('like')">
+              ❤️ Thả tim (<span id="filter-cnt-like">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-post-filter-comment" onclick="filterCurrentPostInteractions('comment')">
+              💬 Bình luận (<span id="filter-cnt-comment">0</span>)
+            </button>
+            <button type="button" class="btn btn-sm btn-secondary" id="btn-post-filter-share" onclick="filterCurrentPostInteractions('share')">
+              🔁 Chia sẻ (<span id="filter-cnt-share">0</span>)
+            </button>
+          </div>
+
+          <div style="min-width: 240px;">
+            <input type="text" id="input-search-post-interactions" oninput="searchCurrentPostInteractions(this.value)" 
+                   class="form-input" placeholder="🔍 Tìm tên hoặc nội dung..." style="padding: 6px 12px; font-size: 0.82rem;">
+          </div>
+        </div>
+
+        <!-- Bảng danh sách người thả tim, comment, share thật 100% -->
+        <div style="overflow-x: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+            <thead>
+              <tr style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">
+                <th style="padding: 10px 14px; width: 60px;">STT</th>
+                <th style="padding: 10px 14px; min-width: 180px;">Người dùng Facebook</th>
+                <th style="padding: 10px 14px; min-width: 140px;">Facebook ID</th>
+                <th style="padding: 10px 14px; text-align: center; width: 130px;">Loại tương tác</th>
+                <th style="padding: 10px 14px; min-width: 260px;">Chi tiết (Cảm xúc / Nội dung Comment)</th>
+                <th style="padding: 10px 14px; width: 130px;">Thời gian</th>
+              </tr>
+            </thead>
+            <tbody id="table-inspector-body">
+              <tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Bấm chọn một bài viết bên trên để xem danh sách tương tác</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- TAB 2: CHI TIẾT THÀNH VIÊN (KHI CÓ FILE THÀNH VIÊN) -->
+    <div id="tab-view-members" style="display: none; overflow-x: auto;">
+      <div id="notice-no-members" style="display: none; background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.4); padding: 12px; border-radius: 6px; margin-bottom: 12px; color: #fde68a; font-size: 0.85rem;">
+        <i class="fa-solid fa-circle-info"></i> Bạn chưa tải lên file danh sách thành viên nhóm nên bảng đối soát này trống. Bạn có thể xem chi tiết người tương tác tại <strong>Tab 1</strong>.
+      </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
         <thead>
           <tr style="background: rgba(15, 23, 42, 0.8); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">
@@ -225,7 +320,7 @@
       </table>
     </div>
 
-    <!-- TAB 2: NGƯỜI LẠ TƯƠNG TÁC -->
+    <!-- TAB 3: NGƯỜI LẠ TƯƠNG TÁC -->
     <div id="tab-view-strangers" style="display: none; overflow-x: auto;">
       <div style="margin-bottom: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
         <span style="font-size: 0.85rem; color: var(--text-muted);">Lọc theo loại:</span>
@@ -250,17 +345,17 @@
       </table>
     </div>
 
-    <!-- TAB 3: TỔNG HỢP BÀI VIẾT -->
+    <!-- TAB 4: TỔNG HỢP BÀI VIẾT -->
     <div id="tab-view-posts" style="display: none; overflow-x: auto;">
       <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
         <thead>
           <tr style="background: rgba(15, 23, 42, 0.8); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">
             <th style="padding: 10px 14px;">ID Bài viết</th>
-            <th style="padding: 10px 14px;">Link Facebook</th>
+            <th style="padding: 10px 14px;">Mô tả / Link Facebook</th>
             <th style="padding: 10px 14px; text-align: center;">Lượt Like thật</th>
             <th style="padding: 10px 14px; text-align: center;">Lượt Comment thật</th>
             <th style="padding: 10px 14px; text-align: center;">Lượt Share thật</th>
-            <th style="padding: 10px 14px; text-align: center;">% Hoàn thành</th>
+            <th style="padding: 10px 14px; text-align: center;">Thao tác</th>
           </tr>
         </thead>
         <tbody id="table-posts-body">

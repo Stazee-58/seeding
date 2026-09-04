@@ -67,15 +67,45 @@ def generate_excel_report(
     stranger_results: list[dict[str, Any]],
     collected: dict[str, dict[str, Any]],
     has_members: bool = False,
+    users_directory: list[dict[str, Any]] | None = None,
     output_dir: str = "",
 ) -> str:
     """Tạo file Excel báo cáo hoàn chỉnh 100% dữ liệu thực tế."""
     wb = Workbook()
     wb.remove(wb.active)  # Xoá sheet mặc định
 
+    # =========================================================================
+    # SHEET 1: BẢNG TỔNG HỢP THEO TÊN TẤT CẢ NGƯỜI DÙNG TƯƠNG TÁC TOÀN TRANG
+    # =========================================================================
+    if users_directory:
+        ws_users = wb.create_sheet(title="Danh_sach_ten_nguoi_tuong_tac")
+        h_u = [
+            "STT", "Họ và tên người dùng Facebook", "Facebook ID", "Link Facebook cá nhân",
+            "Số bài đã Tim/Like", "Số bài đã Comment", "Số bài đã Share",
+            "Tổng số tương tác", "Số bài tham gia", "Tỷ lệ tương tác toàn trang (%)"
+        ]
+        _write_header(ws_users, h_u)
+        for idx, u in enumerate(users_directory, start=1):
+            rate_val = f"{u.get('participation_rate', 0)}%"
+            row_vals = [
+                idx,
+                u.get("name", ""),
+                u.get("user_id", ""),
+                u.get("profile_url", ""),
+                u.get("likes_count", 0),
+                u.get("comments_count", 0),
+                u.get("shares_count", 0),
+                u.get("total_interactions", 0),
+                u.get("distinct_posts_count", 0),
+                rate_val,
+            ]
+            fill_u = _DONE_BOTH_FILL if u.get("participation_rate", 0) >= 80 else (_DONE_PART_FILL if u.get("participation_rate", 0) >= 30 else None)
+            _write_row(ws_users, idx + 1, row_vals, fill=fill_u)
+        _auto_fit_columns(ws_users)
+
     if has_members and match_results:
         # =====================================================================
-        # TRƯỜNG HỢP 1: CÓ DANH SÁCH THÀNH VIÊN ĐỐI SOÁT
+        # TRƯỜNG HỢP CÓ DANH SÁCH THÀNH VIÊN ĐỐI SOÁT
         # =====================================================================
         ws1 = wb.create_sheet(title="Chi_tiet_Thanh_vien")
         h1 = [
@@ -119,7 +149,7 @@ def generate_excel_report(
             _write_row(ws1, idx + 1, row_vals, fill=row_fill)
         _auto_fit_columns(ws1)
 
-        # Sheet 2: Người lạ tương tác
+        # Sheet: Người lạ tương tác
         ws2 = wb.create_sheet(title="Nguoi_la_tuong_tac")
         h2 = ["STT", "Mô tả bài đăng", "Link bài", "Tên người lạ", "Facebook ID / Link", "Loại tương tác", "Nội dung tương tác", "Thời gian"]
         _write_header(ws2, h2)
@@ -132,7 +162,7 @@ def generate_excel_report(
             _write_row(ws2, idx + 1, row_vals, fill=_STRANGER_FILL)
         _auto_fit_columns(ws2)
 
-        # Sheet 3: Cần nhắc nhở
+        # Sheet: Cần nhắc nhở
         ws4 = wb.create_sheet(title="Can_nhac_nho")
         h4 = ["STT", "Họ và tên", "Facebook ID", "Tên hiển thị", "Bài chưa làm", "Link bài"]
         _write_header(ws4, h4)

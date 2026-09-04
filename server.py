@@ -278,29 +278,18 @@ def start_tracking():
         return jsonify({"success": False, "error": "Tài khoản đang chờ duyệt"}), 403
 
     cookie_str = request.form.get("cookie", "").strip()
+    mode = request.form.get("mode", "page").strip()
+    page_url = request.form.get("page_url", "").strip()
+    max_posts_str = request.form.get("max_posts", "0").strip()
     post_urls_text = request.form.get("post_urls", "").strip()
     check_likes = request.form.get("check_likes") == "1"
     check_comments = request.form.get("check_comments") == "1"
     check_shares = request.form.get("check_shares") == "1"
 
-    # Lấy danh sách link bài viết
-    post_urls = []
-    if post_urls_text:
-        for line in post_urls_text.splitlines():
-            line = line.strip()
-            if line and ("facebook.com" in line or "fb.watch" in line):
-                post_urls.append(line)
-
-    if "post_file" in request.files:
-        p_file = request.files["post_file"]
-        if p_file and p_file.filename:
-            file_urls = parse_posts_excel(p_file)
-            post_urls.extend(file_urls)
-
-    # Khử trùng lặp link ban đầu
-    raw_urls = list(dict.fromkeys(post_urls))
-    if not raw_urls:
-        return jsonify({"success": False, "error": "Không tìm thấy link bài viết hợp lệ nào!"})
+    try:
+        max_posts = int(max_posts_str)
+    except ValueError:
+        max_posts = 0
 
     logs_list = []
     def log_cb(msg: str, lvl: str = "info"):
@@ -308,22 +297,58 @@ def start_tracking():
 
     tracker = NoApiFacebookTracker(cookie_str=cookie_str, log_callback=log_cb)
 
-    # Kiểm tra nếu người dùng dán link Fanpage/Trang thay vì từng link bài -> tự động tìm bài trên trang
-    final_post_urls = []
-    for u in raw_urls:
-        if extract_post_id_from_url(u):
-            final_post_urls.append(u)
-        else:
-            # Có thể là link trang
-            page_posts = tracker.fetch_page_post_urls(u, limit=12)
-            if page_posts:
-                final_post_urls.extend(page_posts)
+    target_posts = []
+
+    # -------------------------------------------------------------------------
+    # CHẾ ĐỘ 1: QUÉT TOÀN BỘ BÀI VIẾT TRÊN FANPAGE
+    # -------------------------------------------------------------------------
+    if mode == "page" or (page_url and not post_urls_text and "post_file" not in request.files):
+        if not page_url:
+            return jsonify({"success": False, "error": "Vui lòng nhập đường dẫn Fanpage hoặc ID Trang!"})
+
+        target_posts = tracker.fetch_page_posts(page_url, limit=max_posts)
+        if not target_posts:
+            return jsonify({
+                "success": False,
+                "error": f"Không tìm thấy bài viết nào trên Trang '{page_url}'. Hãy kiểm tra lại link hoặc cookie đăng nhập!",
+                "logs": logs_list,
+            })
+
+    # -------------------------------------------------------------------------
+    # CHẾ ĐỘ 2: QUÉT THEO DANH SÁCH BÀI VIẾT HOẶC FILE
+    # -------------------------------------------------------------------------
+    else:
+        post_urls = []
+        if post_urls_text:
+            for line in post_urls_text.splitlines():
+                line = line.strip()
+                if line and ("facebook.com" in line or "fb.watch" in line):
+                    post_urls.append(line)
+
+        if "post_file" in request.files:
+            p_file = request.files["post_file"]
+            if p_file and p_file.filename:
+                file_urls = parse_posts_excel(p_file)
+                post_urls.extend(file_urls)
+
+        raw_urls = list(dict.fromkeys(post_urls))
+        if not raw_urls:
+            return jsonify({"success": False, "error": "Không tìm thấy link bài viết hợp lệ nào!"})
+
+        # Kiểm tra nếu trong danh sách có link Fanpage -> tự động cào bài của trang đó
+        for u in raw_urls:
+            if extract_post_id_from_url(u):
+                target_posts.append(u)
             else:
-                final_post_urls.append(u)
+                page_posts = tracker.fetch_page_posts(u, limit=max_posts if max_posts > 0 else 15)
+                if page_posts:
+                    target_posts.extend(page_posts)
+                else:
+                    target_posts.append(u)
 
-    final_post_urls = list(dict.fromkeys(final_post_urls))
+    tracker.log(f"🎯 Bắt đầu phân tích tương tác trên tổng cộng {len(target_posts)} bài viết...", "info")
 
-    # Lấy danh sách thành viên (CHỈ lấy khi người dùng tải file lên)
+    # Lấy danh sách thành viên (nếu người dùng tải file lên để đối soát)
     members = []
     has_members = False
     if "member_file" in request.files:
@@ -335,17 +360,17 @@ def start_tracking():
                 tracker.log(f"👥 Đã nạp {len(members)} thành viên từ file Excel để đối soát.", "info")
 
     if not has_members:
-        tracker.log("ℹ️ Chế độ: Quét toàn bộ tương tác bài viết (Không có danh sách thành viên).", "info")
+        tracker.log("ℹ️ Chế độ: Quét danh sách người tương tác toàn trang (Không dùng danh sách thành viên).", "info")
 
     # Tiến hành cào dữ liệu thực tế 100% không cần API
     raw_posts_data = tracker.track_posts(
-        post_urls=final_post_urls,
+        post_urls=target_posts,
         check_likes=check_likes,
         check_comments=check_comments,
         check_shares=check_shares,
     )
 
-    # Chuẩn hoá sang dict collected
+    # Chuẩn hoá sang dict collected và posts_details
     collected = {}
     posts_details = []
 
@@ -376,6 +401,116 @@ def start_tracking():
             "comments": cmts,
             "shares": shrs,
         })
+
+    # =========================================================================
+    # TỔNG HỢP DANH SÁCH TẤT CẢ NGƯỜI DÙNG TƯƠNG TÁC TOÀN TRANG (CHECK TÊN RA)
+    # =========================================================================
+    user_engagement = {}
+    for p in raw_posts_data:
+        pid = p["post_id"]
+        p_url = p.get("post_url", "")
+        mo_ta = p.get("mo_ta", pid)
+
+        # 1. Thả tim / Like
+        for r in p.get("reactions", []):
+            u_name = r.get("name", "").strip()
+            u_id = r.get("id", "").strip()
+            if not u_name:
+                continue
+            key = u_id if u_id else u_name.lower()
+            if key not in user_engagement:
+                user_engagement[key] = {
+                    "name": u_name,
+                    "user_id": u_id,
+                    "profile_url": r.get("profile_url") or (f"https://facebook.com/{u_id}" if u_id else ""),
+                    "likes_count": 0,
+                    "comments_count": 0,
+                    "shares_count": 0,
+                    "total_interactions": 0,
+                    "liked_posts": [],
+                    "commented_posts": [],
+                    "shared_posts": [],
+                }
+            user_engagement[key]["likes_count"] += 1
+            user_engagement[key]["total_interactions"] += 1
+            if pid not in [x["post_id"] for x in user_engagement[key]["liked_posts"]]:
+                user_engagement[key]["liked_posts"].append({
+                    "post_id": pid,
+                    "type": r.get("type", "LIKE"),
+                    "mo_ta": mo_ta,
+                })
+
+        # 2. Bình luận
+        for c in p.get("comments", []):
+            u_name = (c.get("from_name") or c.get("name") or "").strip()
+            u_id = (c.get("from_id") or c.get("id") or "").strip()
+            if not u_name:
+                continue
+            key = u_id if u_id else u_name.lower()
+            if key not in user_engagement:
+                user_engagement[key] = {
+                    "name": u_name,
+                    "user_id": u_id,
+                    "profile_url": f"https://facebook.com/{u_id}" if u_id else "",
+                    "likes_count": 0,
+                    "comments_count": 0,
+                    "shares_count": 0,
+                    "total_interactions": 0,
+                    "liked_posts": [],
+                    "commented_posts": [],
+                    "shared_posts": [],
+                }
+            user_engagement[key]["comments_count"] += 1
+            user_engagement[key]["total_interactions"] += 1
+            user_engagement[key]["commented_posts"].append({
+                "post_id": pid,
+                "message": c.get("message", ""),
+                "created_time": c.get("created_time", ""),
+                "mo_ta": mo_ta,
+            })
+
+        # 3. Chia sẻ
+        for s in p.get("shares", []):
+            u_name = s.get("name", "").strip()
+            u_id = s.get("id", "").strip()
+            if not u_name:
+                continue
+            key = u_id if u_id else u_name.lower()
+            if key not in user_engagement:
+                user_engagement[key] = {
+                    "name": u_name,
+                    "user_id": u_id,
+                    "profile_url": f"https://facebook.com/{u_id}" if u_id else "",
+                    "likes_count": 0,
+                    "comments_count": 0,
+                    "shares_count": 0,
+                    "total_interactions": 0,
+                    "liked_posts": [],
+                    "commented_posts": [],
+                    "shared_posts": [],
+                }
+            user_engagement[key]["shares_count"] += 1
+            user_engagement[key]["total_interactions"] += 1
+            if pid not in user_engagement[key]["shared_posts"]:
+                user_engagement[key]["shared_posts"].append(pid)
+
+    # Tính tỷ lệ tham gia (%) và gom thành danh sách xếp hạng
+    total_posts_count = len(collected)
+    users_directory = []
+    for key, u in user_engagement.items():
+        distinct_posts = set(
+            [x["post_id"] for x in u["liked_posts"]] +
+            [x["post_id"] for x in u["commented_posts"]] +
+            u["shared_posts"]
+        )
+        p_cnt = len(distinct_posts)
+        rate = round((p_cnt / total_posts_count) * 100, 1) if total_posts_count > 0 else 0.0
+        u["distinct_posts_count"] = p_cnt
+        u["participation_rate"] = rate
+        users_directory.append(u)
+
+    # Sắp xếp người tương tác nhiều nhất lên đầu
+    users_directory.sort(key=lambda x: (x["total_interactions"], x["distinct_posts_count"]), reverse=True)
 
     # Đối soát thành viên nếu có
     match_results = []
@@ -411,22 +546,24 @@ def start_tracking():
             "completion_rate": rate,
         })
 
-    # Xuất file Excel báo cáo (hỗ trợ cả có và không có thành viên)
+    # Xuất file Excel báo cáo
     report_file_path = generate_excel_report(
         match_results=match_results,
         stranger_results=strangers,
         collected=collected,
         has_members=has_members,
+        users_directory=users_directory,
         output_dir=REPORTS_DIR,
     )
     report_filename = os.path.basename(report_file_path)
 
     # Lưu lịch sử
+    campaign_label = f"Quét Trang ({len(collected)} bài, {len(users_directory)} người)" if mode == "page" else f"Quét {len(collected)} bài viết"
     database.add_tracking_history(
         user_id=user["id"],
-        campaign_name=f"Quét {len(collected)} bài ({'Có DS thành viên' if has_members else 'Xem tương tác tự do'})",
+        campaign_name=campaign_label,
         post_count=len(collected),
-        member_count=len(members),
+        member_count=len(users_directory),
         report_path=report_file_path,
     )
 
@@ -434,8 +571,10 @@ def start_tracking():
         "success": True,
         "has_members": has_members,
         "total_posts": len(collected),
+        "total_users_interacted": len(users_directory),
         "total_members": len(members),
         "logs": logs_list,
+        "users_directory": users_directory,
         "posts_details": posts_details,
         "match_results": match_results,
         "strangers": strangers,

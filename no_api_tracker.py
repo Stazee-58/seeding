@@ -175,6 +175,33 @@ def clean_facebook_url(url: str) -> str:
     return url.rstrip("/")
 
 
+def normalize_fanpage_mbasic_url(page_input: str) -> str:
+    """Chuẩn hoá URL/ID Fanpage thành link timeline trên mbasic."""
+    if not page_input:
+        return ""
+    page_input = page_input.strip()
+    if not page_input.startswith("http://") and not page_input.startswith("https://"):
+        if page_input.isdigit():
+            return f"https://mbasic.facebook.com/profile.php?id={page_input}&v=timeline"
+        return f"https://mbasic.facebook.com/{page_input}?v=timeline"
+
+    parsed = urlparse(page_input)
+    qs = parse_qs(parsed.query)
+
+    if "profile.php" in parsed.path:
+        p_id = qs.get("id", [""])[0]
+        if p_id:
+            return f"https://mbasic.facebook.com/profile.php?id={p_id}&v=timeline"
+
+    clean_path = parsed.path.strip("/")
+    parts = [p for p in clean_path.split("/") if p and p not in ("pages", "category", "groups")]
+    if parts:
+        page_handle = parts[-1]
+        return f"https://mbasic.facebook.com/{page_handle}?v=timeline"
+
+    return f"https://mbasic.facebook.com{parsed.path}?v=timeline"
+
+
 class NoApiFacebookTracker:
     """Bộ thu thập dữ liệu tương tác bài viết Facebook không cần Graph API."""
 
@@ -457,60 +484,175 @@ class NoApiFacebookTracker:
         return shares
 
     # -------------------------------------------------------------------------
-    # 4. Cào Danh Sách Bài Viết Từ Fanpage/Trang
+    # 4. Cào Danh Sách Tất Cả Bài Viết Từ Fanpage/Trang (Hỗ trợ phân trang đến hết)
     # -------------------------------------------------------------------------
-    def fetch_page_post_urls(self, page_url: str, limit: int = 15) -> List[str]:
+    def fetch_page_posts(self, page_url_or_id: str, limit: int = 0) -> List[Dict[str, Any]]:
         """
-        Cào danh sách link các bài viết mới nhất từ link Fanpage/Trang trên mbasic.
+        Cào danh sách tất cả các bài viết trên Fanpage bằng cách phân trang liên tục.
+        limit = 0: Quét TẤT CẢ bài viết trên trang (đến bài cuối cùng).
+        limit > 0: Quét tối đa `limit` bài viết mới nhất.
+        Trả về: [{'post_id': str, 'post_url': str, 'mo_ta': str, 'time_text': str}, ...]
         """
-        post_urls: List[str] = []
-        page_clean = page_url.split("?")[0].rstrip("/")
-        page_id_or_handle = page_clean.split("/")[-1]
-        target_url = f"https://mbasic.facebook.com/{page_id_or_handle}"
-        
-        self.log(f"🔎 Đang tìm các bài viết mới nhất trên Trang: {page_id_or_handle}...", "info")
-        try:
-            res = self.session.get(target_url, timeout=12)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, "html.parser")
-                for a in soup.find_all("a"):
-                    href = a.get("href", "")
-                    if ("story_fbid=" in href or "/posts/" in href or "/photos/" in href or "/videos/" in href) and "comment" not in href and "like" not in href:
-                        clean_href = href.split("&")[0] if "story_fbid" in href else href.split("?")[0]
-                        full_url = "https://www.facebook.com" + clean_href if clean_href.startswith("/") else clean_href
-                        if full_url not in post_urls:
-                            post_urls.append(full_url)
-                    if len(post_urls) >= limit:
-                        break
-        except Exception as e:
-            self.log(f"⚠️ Không thể đọc bài từ Trang {page_id_or_handle}: {e}", "warning")
+        target_url = normalize_fanpage_mbasic_url(page_url_or_id)
+        self.log(f"🔎 Bắt đầu quét các bài viết trên Fanpage: {page_url_or_id}...", "info")
 
-        self.log(f"📋 Tìm thấy {len(post_urls)} bài viết trên Trang.", "success")
-        return post_urls
+        posts_found: List[Dict[str, Any]] = []
+        seen_post_ids = set()
+        current_url: Optional[str] = target_url
+        page_num = 0
+        max_pages = 50 if limit == 0 else max(10, (limit // 5) + 3)
+
+        while current_url and page_num < max_pages:
+            page_num += 1
+            self.log(f"📄 Đang đọc dòng thời gian Fanpage (Trang #{page_num})...", "info")
+
+            try:
+                res = self.session.get(current_url, timeout=14)
+                if res.status_code != 200:
+                    self.log(f"⚠️ Máy chủ Facebook phản hồi mã {res.status_code} khi tải trang {page_num}", "warning")
+                    break
+
+                soup = BeautifulSoup(res.text, "html.parser")
+
+                # Tìm tất cả khối bài viết
+                post_blocks = soup.find_all(["article", "div"], role=lambda r: r and "article" in r.lower())
+                if not post_blocks:
+                    post_blocks = soup.find_all("div", id=lambda i: i and "story" in i.lower())
+                if not post_blocks:
+                    post_blocks = soup.find_all("div", class_=lambda c: c and ("story" in c.lower() or "feed" in c.lower()))
+
+                new_on_page = 0
+                
+                # Nếu tìm thấy các khối bài viết, duyệt từng khối
+                if post_blocks:
+                    for block in post_blocks:
+                        pid = None
+                        purl = ""
+                        for a in block.find_all("a"):
+                            href = a.get("href", "")
+                            if ("story_fbid=" in href or "/posts/" in href or "/photos/" in href or "/videos/" in href or "permalink" in href) and "comment" not in href and "like" not in href:
+                                extracted_id = extract_post_id_from_url(href)
+                                if extracted_id:
+                                    pid = extracted_id
+                                    clean_href = href.split("&")[0] if "story_fbid" in href else href.split("?")[0]
+                                    purl = "https://www.facebook.com" + clean_href if clean_href.startswith("/") else clean_href
+                                    break
+
+                        if pid and pid not in seen_post_ids:
+                            seen_post_ids.add(pid)
+                            # Trích xuất đoạn văn bản mô tả bài viết
+                            caption = ""
+                            text_lines = []
+                            for p_tag in block.find_all(["p", "span", "div"]):
+                                t = p_tag.text.strip()
+                                if t and len(t) > 5 and not any(kw in t.lower() for kw in ["thích", "bình luận", "chia sẻ", "like", "comment", "share"]):
+                                    text_lines.append(t)
+                            if text_lines:
+                                caption = " ".join(text_lines[:2])
+                            else:
+                                caption = block.text.strip().replace("\n", " ")[:90]
+
+                            caption_clean = caption[:100] + ("..." if len(caption) > 100 else "")
+                            posts_found.append({
+                                "post_id": pid,
+                                "post_url": purl or f"https://www.facebook.com/{pid}",
+                                "mo_ta": caption_clean or f"Bài viết ID {pid}",
+                                "time_text": "",
+                            })
+                            new_on_page += 1
+                            if limit > 0 and len(posts_found) >= limit:
+                                break
+
+                # Nếu duyệt theo khối không có hoặc còn sót, quét toàn bộ liên kết trên trang
+                if len(posts_found) < (limit if limit > 0 else 999):
+                    for a in soup.find_all("a"):
+                        href = a.get("href", "")
+                        if ("story_fbid=" in href or "/posts/" in href or "/photos/" in href or "/videos/" in href) and "comment" not in href and "like" not in href and "sharer" not in href:
+                            pid = extract_post_id_from_url(href)
+                            if pid and pid not in seen_post_ids:
+                                seen_post_ids.add(pid)
+                                clean_href = href.split("&")[0] if "story_fbid" in href else href.split("?")[0]
+                                purl = "https://www.facebook.com" + clean_href if clean_href.startswith("/") else clean_href
+                                posts_found.append({
+                                    "post_id": pid,
+                                    "post_url": purl,
+                                    "mo_ta": f"Bài viết ID {pid}",
+                                    "time_text": "",
+                                })
+                                new_on_page += 1
+                                if limit > 0 and len(posts_found) >= limit:
+                                    break
+
+                self.log(f"   ➕ Trang #{page_num}: Thu thập thêm {new_on_page} bài (Tổng cộng hiện có: {len(posts_found)} bài)", "info")
+
+                if limit > 0 and len(posts_found) >= limit:
+                    self.log(f"🎯 Đã đạt chỉ tiêu quét {limit} bài viết theo yêu cầu.", "success")
+                    break
+
+                # Tìm nút phân trang "Xem thêm tin" / "Show more stories"
+                next_link = None
+                for a in soup.find_all("a"):
+                    text = a.text.strip().lower()
+                    href = a.get("href", "")
+                    if any(kw in text for kw in ["xem thêm tin", "tin cũ hơn", "xem bài viết cũ hơn", "xem bài cũ hơn", "bài viết cũ hơn", "show more stories", "more stories", "older stories", "see more posts", "older posts"]) or (("cursor=" in href or "sectionLoadingID=" in href) and "v=timeline" in href):
+                        if "login" not in href and "checkpoint" not in href:
+                            next_link = "https://mbasic.facebook.com" + href if href.startswith("/") else href
+                            break
+
+                if not next_link:
+                    for a in soup.find_all("a", href=True):
+                        h = a["href"]
+                        if ("cursor=" in h or "unit_cursor=" in h or "sectionLoadingID=" in h) and "login" not in h:
+                            next_link = "https://mbasic.facebook.com" + h if h.startswith("/") else h
+                            break
+
+                current_url = next_link
+                if current_url:
+                    self._sleep_random(0.7, 1.4)
+                else:
+                    self.log(f"🏁 Đã quét đến bài viết cuối cùng của Fanpage! Không còn bài cũ hơn.", "info")
+                    break
+
+            except Exception as e:
+                self.log(f"⚠️ Lỗi quét trang #{page_num}: {e}", "warning")
+                break
+
+        self.log(f"✅ Quét xong Fanpage! Tổng cộng thu thập được {len(posts_found)} bài viết.", "success")
+        return posts_found
+
+    def fetch_page_post_urls(self, page_url: str, limit: int = 15) -> List[str]:
+        """Tương thích ngược: Trả về danh sách URL dạng chuỗi."""
+        posts = self.fetch_page_posts(page_url, limit=limit)
+        return [p["post_url"] for p in posts]
 
     # -------------------------------------------------------------------------
     # 5. Quét Toàn Diện Một Hoặc Nhiều Bài Đăng
     # -------------------------------------------------------------------------
     def track_posts(
         self,
-        post_urls: List[str],
+        post_urls: List[Any],
         check_likes: bool = True,
         check_comments: bool = True,
         check_shares: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Duyệt qua danh sách bài viết và cào dữ liệu tương tác thực tế 100%.
+        `post_urls` có thể là danh sách URL (str) hoặc danh sách dict {'post_id', 'post_url', 'mo_ta'}.
         """
         results = []
         total = len(post_urls)
 
-        for idx, url in enumerate(post_urls, 1):
-            url = url.strip()
-            if not url:
-                continue
+        for idx, item in enumerate(post_urls, 1):
+            if isinstance(item, dict):
+                url = item.get("post_url", "").strip()
+                post_id = item.get("post_id") or extract_post_id_from_url(url)
+                initial_mo_ta = item.get("mo_ta", f"Bài viết ID {post_id}")
+            else:
+                url = str(item).strip()
+                post_id = extract_post_id_from_url(url)
+                initial_mo_ta = f"Bài viết ID {post_id}"
 
-            post_id = extract_post_id_from_url(url)
-            if not post_id:
+            if not url or not post_id:
                 self.log(f"❌ [{idx}/{total}] Không tìm thấy Post ID hợp lệ trong link: {url}", "error")
                 continue
 
@@ -518,26 +660,26 @@ class NoApiFacebookTracker:
             post_data = {
                 "post_id": post_id,
                 "post_url": url,
-                "message": f"Bài viết ID {post_id}",
-                "mo_ta": f"Bài viết ID {post_id}",
+                "message": initial_mo_ta,
+                "mo_ta": initial_mo_ta,
                 "reactions": [],
                 "comments": [],
                 "shares": [],
             }
 
-            # Lấy mô tả bài viết từ trang bài viết
-            try:
-                post_res = self.session.get(f"https://mbasic.facebook.com/{post_id}", timeout=10)
-                if post_res.status_code == 200:
-                    soup = BeautifulSoup(post_res.text, "html.parser")
-                    # Thử lấy tiêu đề hoặc nội dung văn bản đầu tiên
-                    content_div = soup.find("div", id=lambda i: i and "story" in i.lower()) or soup.find("p")
-                    if content_div and content_div.text.strip():
-                        txt = content_div.text.strip().replace("\n", " ")
-                        post_data["mo_ta"] = txt[:90] + ("..." if len(txt) > 90 else "")
-                        post_data["message"] = txt
-            except Exception:
-                pass
+            # Lấy thêm mô tả chi tiết nếu chưa có
+            if not initial_mo_ta or initial_mo_ta.startswith("Bài viết ID"):
+                try:
+                    post_res = self.session.get(f"https://mbasic.facebook.com/{post_id}", timeout=10)
+                    if post_res.status_code == 200:
+                        soup = BeautifulSoup(post_res.text, "html.parser")
+                        content_div = soup.find("div", id=lambda i: i and "story" in i.lower()) or soup.find("p")
+                        if content_div and content_div.text.strip():
+                            txt = content_div.text.strip().replace("\n", " ")
+                            post_data["mo_ta"] = txt[:90] + ("..." if len(txt) > 90 else "")
+                            post_data["message"] = txt
+                except Exception:
+                    pass
 
             if check_likes:
                 post_data["reactions"] = self.fetch_reactions(url, post_id)

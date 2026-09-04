@@ -2,6 +2,7 @@
 // FB TRACKING NO-API — CLIENT APPLICATION JAVASCRIPT
 // ==========================================================================
 
+let currentTargetMode = 'page';
 let uploadedMemberFile = null;
 let uploadedPostFile = null;
 let trackingData = null;
@@ -11,6 +12,26 @@ function toggleCookieGuide() {
   const box = document.getElementById('cookie-guide-box');
   if (box) {
     box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  }
+}
+
+function setTrackingTargetMode(mode) {
+  currentTargetMode = mode;
+  const boxPage = document.getElementById('box-target-page');
+  const boxPosts = document.getElementById('box-target-posts');
+  const btnPage = document.getElementById('btn-target-page');
+  const btnPosts = document.getElementById('btn-target-posts');
+
+  if (mode === 'page') {
+    if (boxPage) boxPage.style.display = 'block';
+    if (boxPosts) boxPosts.style.display = 'none';
+    if (btnPage) btnPage.className = 'btn btn-sm btn-primary';
+    if (btnPosts) btnPosts.className = 'btn btn-sm btn-secondary';
+  } else {
+    if (boxPage) boxPage.style.display = 'none';
+    if (boxPosts) boxPosts.style.display = 'block';
+    if (btnPage) btnPage.className = 'btn btn-sm btn-secondary';
+    if (btnPosts) btnPosts.className = 'btn btn-sm btn-primary';
   }
 }
 
@@ -123,15 +144,24 @@ async function checkCookie() {
 
 async function startTracking() {
   const cookie = (document.getElementById('fb_cookie').value || '').trim();
-  const postUrlsText = (document.getElementById('post_urls').value || '').trim();
+  const fanpageUrl = (document.getElementById('fanpage_url') ? document.getElementById('fanpage_url').value : '').trim();
+  const maxPosts = document.getElementById('max_posts') ? document.getElementById('max_posts').value : '0';
+  const postUrlsText = (document.getElementById('post_urls') ? document.getElementById('post_urls').value : '').trim();
   const checkLikes = document.getElementById('check_likes').checked;
   const checkComments = document.getElementById('check_comments').checked;
   const checkShares = document.getElementById('check_shares').checked;
   const btnStart = document.getElementById('btn-start-track');
 
-  if (!postUrlsText && !uploadedPostFile) {
-    alert('Vui lòng nhập ít nhất 1 link bài viết Facebook hoặc tải lên file Excel bài viết!');
-    return;
+  if (currentTargetMode === 'page') {
+    if (!fanpageUrl) {
+      alert('Vui lòng nhập đường dẫn Fanpage hoặc ID Trang Facebook!');
+      return;
+    }
+  } else {
+    if (!postUrlsText && !uploadedPostFile) {
+      alert('Vui lòng nhập ít nhất 1 link bài viết Facebook hoặc tải lên file Excel bài viết!');
+      return;
+    }
   }
 
   clearLogs();
@@ -142,6 +172,9 @@ async function startTracking() {
 
   const formData = new FormData();
   formData.append('cookie', cookie);
+  formData.append('mode', currentTargetMode);
+  formData.append('page_url', fanpageUrl);
+  formData.append('max_posts', maxPosts);
   formData.append('post_urls', postUrlsText);
   formData.append('check_likes', checkLikes ? '1' : '0');
   formData.append('check_comments', checkComments ? '1' : '0');
@@ -170,9 +203,9 @@ async function startTracking() {
         data.logs.forEach(l => appendLog(l.msg, l.level));
       }
 
-      appendLog(`🎉 Hoàn tất cào và đối soát! Đã xử lý ${data.total_posts} bài viết với ${data.total_members} thành viên.`, 'success');
+      appendLog(`🎉 Hoàn tất cào và tổng hợp! Đã phân tích ${data.total_posts} bài viết với ${data.total_users_interacted || (data.users_directory || []).length} người tương tác.`, 'success');
 
-      // Hiển thị kết quả lên 3 Tab
+      // Hiển thị kết quả lên giao diện
       renderResults(data);
       document.getElementById('results-container').style.display = 'block';
       document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
@@ -191,33 +224,56 @@ async function startTracking() {
 }
 
 let allPostsDetails = [];
+let allUsersDirectory = [];
+let currentUserFilterType = 'all';
 let currentSelectedPostIndex = 0;
 let currentPostFilterType = 'all';
 
 function renderResults(data) {
   allPostsDetails = data.posts_details || [];
+  allUsersDirectory = data.users_directory || [];
   
-  // 1. Cập nhật tiêu đề & tab mặc định
+  // 1. Cập nhật số liệu tổng quan toàn trang (Thẻ thống kê)
+  const statUsers = document.getElementById('stat-total-users');
+  const statPosts = document.getElementById('stat-total-posts');
+  const statLikes = document.getElementById('stat-total-likes');
+  const statCmts = document.getElementById('stat-total-comments');
+  const statShares = document.getElementById('stat-total-shares');
+
+  let totalLikes = 0;
+  let totalCmts = 0;
+  let totalShares = 0;
+  allPostsDetails.forEach(p => {
+    totalLikes += (p.likes_count || 0);
+    totalCmts += (p.comments_count || 0);
+    totalShares += (p.shares_count || 0);
+  });
+
+  if (statUsers) statUsers.innerText = allUsersDirectory.length;
+  if (statPosts) statPosts.innerText = allPostsDetails.length;
+  if (statLikes) statLikes.innerText = totalLikes;
+  if (statCmts) statCmts.innerText = totalCmts;
+  if (statShares) statShares.innerText = totalShares;
+
+  // 2. Cập nhật số lượng người theo từng bộ lọc ở Tab 1
+  const uCntAll = document.getElementById('user-cnt-all');
+  const uCntLike = document.getElementById('user-cnt-like');
+  const uCntCmt = document.getElementById('user-cnt-comment');
+  const uCntShare = document.getElementById('user-cnt-share');
+
+  if (uCntAll) uCntAll.innerText = allUsersDirectory.length;
+  if (uCntLike) uCntLike.innerText = allUsersDirectory.filter(u => u.likes_count > 0).length;
+  if (uCntCmt) uCntCmt.innerText = allUsersDirectory.filter(u => u.comments_count > 0).length;
+  if (uCntShare) uCntShare.innerText = allUsersDirectory.filter(u => u.shares_count > 0).length;
+
+  // Render bảng danh sách Tên Người Dùng Toàn Trang (Tab 1)
+  currentUserFilterType = 'all';
+  renderUsersDirectoryTable();
+
+  // 3. Render Tab 2: Danh sách thẻ bài viết (Post Cards)
   const countEl = document.getElementById('inspector-posts-count');
   if (countEl) countEl.innerText = `${allPostsDetails.length} bài viết đã quét`;
 
-  const noticeNoMem = document.getElementById('notice-no-members');
-  const tabBtnMem = document.getElementById('tab-btn-members');
-  const tabBtnStr = document.getElementById('tab-btn-strangers');
-
-  if (!data.has_members) {
-    if (noticeNoMem) noticeNoMem.style.display = 'block';
-    if (tabBtnMem) tabBtnMem.style.opacity = '0.6';
-    if (tabBtnStr) tabBtnStr.style.opacity = '0.6';
-    switchResultTab('inspector');
-  } else {
-    if (noticeNoMem) noticeNoMem.style.display = 'none';
-    if (tabBtnMem) tabBtnMem.style.opacity = '1';
-    if (tabBtnStr) tabBtnStr.style.opacity = '1';
-    switchResultTab('inspector');
-  }
-
-  // 2. Render danh sách các thẻ bài viết (Post Cards)
   const cardsContainer = document.getElementById('inspector-post-cards');
   if (cardsContainer) {
     if (allPostsDetails.length === 0) {
@@ -247,12 +303,15 @@ function renderResults(data) {
     }
   }
 
-  // Tự động chọn bài đầu tiên
+  // Tự động chọn bài đầu tiên cho Tab 2
   if (allPostsDetails.length > 0) {
     selectInspectorPost(0);
   }
 
-  // 3. Render Tab Đối soát Thành viên (nếu có)
+  // Mặc định chuyển sang Tab 1: Danh Sách Tên Người Tương Tác
+  switchResultTab('users');
+
+  // 4. Render Tab Đối soát Thành viên (nếu có)
   const memBody = document.getElementById('table-members-body');
   if (memBody && data.match_results) {
     if (data.match_results.length === 0) {
@@ -347,6 +406,112 @@ function renderResults(data) {
     });
     postBody.innerHTML = html;
   }
+}
+
+// =========================================================================
+// BẢNG TỔNG HỢP DANH SÁCH TẤT CẢ TÊN NGƯỜI DÙNG TƯƠNG TÁC TOÀN TRANG (TAB 1)
+// =========================================================================
+function renderUsersDirectoryTable(searchQuery = '') {
+  const tableBody = document.getElementById('table-users-body');
+  if (!tableBody) return;
+
+  let list = allUsersDirectory || [];
+
+  // Lọc theo loại tương tác
+  if (currentUserFilterType === 'like') {
+    list = list.filter(u => u.likes_count > 0);
+  } else if (currentUserFilterType === 'comment') {
+    list = list.filter(u => u.comments_count > 0);
+  } else if (currentUserFilterType === 'share') {
+    list = list.filter(u => u.shares_count > 0);
+  }
+
+  // Lọc theo ô tìm kiếm
+  const q = (searchQuery || '').toLowerCase().trim();
+  if (q) {
+    list = list.filter(u => 
+      (u.name || '').toLowerCase().includes(q) ||
+      (u.user_id || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (list.length === 0) {
+    tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Không tìm thấy người dùng nào ${currentUserFilterType !== 'all' ? `phù hợp với bộ lọc` : ''}.</td></tr>`;
+    return;
+  }
+
+  let html = '';
+  list.forEach((u, idx) => {
+    const initial = (u.name[0] || 'U').toUpperCase();
+    const rate = u.participation_rate || 0;
+    let rateColor = '#34d399';
+    if (rate < 30) rateColor = '#f87171';
+    else if (rate < 70) rateColor = '#fbbf24';
+
+    html += `
+      <tr style="border-bottom: 1px solid var(--border-subtle);">
+        <td style="padding: 10px 14px; color: var(--text-muted); font-family: var(--font-mono);">${idx + 1}</td>
+        <td style="padding: 10px 14px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #38bdf8, #2563eb); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.78rem; font-weight: 700;">
+              ${initial}
+            </div>
+            <div>
+              ${u.profile_url ? `<a href="${u.profile_url}" target="_blank" style="font-weight: 700; color: #fff; font-size: 0.88rem;">${escapeHtml(u.name)}</a>` : `<span style="font-weight: 700; color: #fff;">${escapeHtml(u.name)}</span>`}
+            </div>
+          </div>
+        </td>
+        <td style="padding: 10px 14px; font-family: var(--font-mono); font-size: 0.8rem; color: #93c5fd;">
+          ${u.user_id ? escapeHtml(u.user_id) : '<span style="color: var(--text-muted);">-</span>'}
+        </td>
+        <td style="padding: 10px 14px; text-align: center;">
+          ${u.likes_count > 0 ? `<span style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.8rem;" title="${u.liked_posts.length} bài">❤️ ${u.likes_count} bài</span>` : '<span style="color: #64748b;">-</span>'}
+        </td>
+        <td style="padding: 10px 14px; text-align: center;">
+          ${u.comments_count > 0 ? `<span style="background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.8rem;" title="${escapeHtml((u.commented_posts[0] || {}).message || '')}">💬 ${u.comments_count} cmt</span>` : '<span style="color: #64748b;">-</span>'}
+        </td>
+        <td style="padding: 10px 14px; text-align: center;">
+          ${u.shares_count > 0 ? `<span style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 2px 8px; border-radius: 9999px; font-weight: 700; font-size: 0.8rem;">🔁 ${u.shares_count} bài</span>` : '<span style="color: #64748b;">-</span>'}
+        </td>
+        <td style="padding: 10px 14px; text-align: center; font-weight: 800; font-size: 0.95rem; color: #fff;">
+          ${u.total_interactions}
+        </td>
+        <td style="padding: 10px 14px; text-align: center;">
+          <div style="font-weight: 700; color: ${rateColor}; font-size: 0.85rem;">${rate}%</div>
+          <div style="font-size: 0.72rem; color: var(--text-muted);">${u.distinct_posts_count}/${trackingData ? trackingData.total_posts : 0} bài</div>
+          <div style="width: 100%; background: rgba(255,255,255,0.08); height: 5px; border-radius: 3px; margin-top: 3px; overflow: hidden;">
+            <div style="width: ${rate}%; background: ${rateColor}; height: 100%;"></div>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tableBody.innerHTML = html;
+}
+
+function filterUsersDirectory(type) {
+  currentUserFilterType = type;
+  const btnAll = document.getElementById('btn-user-filter-all');
+  const btnLike = document.getElementById('btn-user-filter-like');
+  const btnComment = document.getElementById('btn-user-filter-comment');
+  const btnShare = document.getElementById('btn-user-filter-share');
+
+  [btnAll, btnLike, btnComment, btnShare].forEach(b => {
+    if (b) b.className = 'btn btn-sm btn-secondary';
+  });
+  if (type === 'all' && btnAll) btnAll.className = 'btn btn-sm btn-primary';
+  if (type === 'like' && btnLike) btnLike.className = 'btn btn-sm btn-primary';
+  if (type === 'comment' && btnComment) btnComment.className = 'btn btn-sm btn-primary';
+  if (type === 'share' && btnShare) btnShare.className = 'btn btn-sm btn-primary';
+
+  const searchInput = document.getElementById('input-search-users');
+  const query = searchInput ? searchInput.value : '';
+  renderUsersDirectoryTable(query);
+}
+
+function searchUsersDirectory(query) {
+  renderUsersDirectoryTable(query);
 }
 
 // Bấm chọn xem tương tác của một bài viết cụ thể
@@ -544,32 +709,32 @@ function searchCurrentPostInteractions(query) {
 }
 
 function switchResultTab(tabName) {
+  const tabUsers = document.getElementById('tab-view-users');
   const tabInspector = document.getElementById('tab-view-inspector');
   const tabMembers = document.getElementById('tab-view-members');
-  const tabStrangers = document.getElementById('tab-view-strangers');
   const tabPosts = document.getElementById('tab-view-posts');
 
+  const btnUsers = document.getElementById('tab-btn-users');
   const btnInspector = document.getElementById('tab-btn-inspector');
   const btnMembers = document.getElementById('tab-btn-members');
-  const btnStrangers = document.getElementById('tab-btn-strangers');
   const btnPosts = document.getElementById('tab-btn-posts');
 
-  [tabInspector, tabMembers, tabStrangers, tabPosts].forEach(t => {
+  [tabUsers, tabInspector, tabMembers, tabPosts].forEach(t => {
     if (t) t.style.display = 'none';
   });
-  [btnInspector, btnMembers, btnStrangers, btnPosts].forEach(b => {
+  [btnUsers, btnInspector, btnMembers, btnPosts].forEach(b => {
     if (b) b.className = 'btn btn-sm btn-secondary';
   });
 
-  if (tabName === 'inspector' && tabInspector) {
+  if (tabName === 'users' && tabUsers) {
+    tabUsers.style.display = 'block';
+    if (btnUsers) btnUsers.className = 'btn btn-sm btn-primary';
+  } else if (tabName === 'inspector' && tabInspector) {
     tabInspector.style.display = 'block';
     if (btnInspector) btnInspector.className = 'btn btn-sm btn-primary';
   } else if (tabName === 'members' && tabMembers) {
     tabMembers.style.display = 'block';
     if (btnMembers) btnMembers.className = 'btn btn-sm btn-primary';
-  } else if (tabName === 'strangers' && tabStrangers) {
-    tabStrangers.style.display = 'block';
-    if (btnStrangers) btnStrangers.className = 'btn btn-sm btn-primary';
   } else if (tabName === 'posts' && tabPosts) {
     tabPosts.style.display = 'block';
     if (btnPosts) btnPosts.className = 'btn btn-sm btn-primary';

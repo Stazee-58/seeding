@@ -97,36 +97,88 @@
 
       </div>
 
-      <!-- LINK BÀI VIẾT CẦN TRACKING -->
-      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <label class="form-label" style="margin-bottom: 0; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
-            <i class="fa-solid fa-link"></i>
-            <span>Link bài viết Facebook cần kiểm tra (Nhập trực tiếp hoặc tải file):</span>
-          </label>
-          <div style="display: flex; gap: 10px;">
-            <button type="button" onclick="togglePostInputMode('text')" id="btn-mode-text" class="btn btn-sm btn-primary" style="padding: 2px 10px; font-size: 0.75rem;">Nhập Link</button>
-            <button type="button" onclick="togglePostInputMode('file')" id="btn-mode-file" class="btn btn-sm btn-secondary" style="padding: 2px 10px; font-size: 0.75rem;">Nạp file Excel</button>
+      <!-- CHỌN CHẾ ĐỘ QUÉT: FANPAGE TOÀN TRANG HOẶC DANH SÁCH BÀI -->
+      <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <label class="form-label" style="margin-bottom: 2px; color: #38bdf8; font-size: 0.95rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+              <i class="fa-solid fa-bullseye"></i>
+              <span>Mục tiêu Quét Facebook:</span>
+            </label>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+              Chọn cào toàn bộ Fanpage/Trang hoặc dán danh sách link bài viết cụ thể
+            </div>
+          </div>
+          
+          <div style="display: flex; gap: 8px;">
+            <button type="button" onclick="setTrackingTargetMode('page')" id="btn-target-page" class="btn btn-sm btn-primary" style="padding: 6px 14px; font-weight: 700; font-size: 0.82rem;">
+              <i class="fa-solid fa-globe"></i> 1. Quét Toàn Bộ Fanpage / Trang
+            </button>
+            <button type="button" onclick="setTrackingTargetMode('posts')" id="btn-target-posts" class="btn btn-sm btn-secondary" style="padding: 6px 14px; font-weight: 700; font-size: 0.82rem;">
+              <i class="fa-solid fa-link"></i> 2. Quét Danh Sách Bài Viết
+            </button>
           </div>
         </div>
 
-        <!-- Chế độ nhập text link -->
-        <div id="box-post-text">
-          <textarea id="post_urls" class="form-input" rows="4" 
-                    placeholder="Dán các link bài viết Facebook vào đây (mỗi link 1 dòng)...&#10;Ví dụ:&#10;https://www.facebook.com/permalink.php?story_fbid=123456789&id=987654321&#10;https://www.facebook.com/fanpage/posts/1122334455"
-                    style="font-family: var(--font-mono); font-size: 0.85rem;"></textarea>
+        <!-- KHUNG CHẾ ĐỘ 1: QUÉT FANPAGE (MẶC ĐỊNH) -->
+        <div id="box-target-page">
+          <div style="display: grid; grid-template-columns: 2.2fr 1fr; gap: 14px; align-items: flex-end;">
+            <div>
+              <label class="form-label" style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 6px;">
+                <i class="fa-brands fa-facebook" style="color: #38bdf8;"></i> Đường dẫn Fanpage hoặc ID Trang Facebook:
+              </label>
+              <input type="text" id="fanpage_url" class="form-input" 
+                     placeholder="Ví dụ: https://www.facebook.com/tenfanpage hoặc ID trang (100064292...)"
+                     style="font-family: var(--font-mono); font-size: 0.85rem;">
+            </div>
+
+            <div>
+              <label class="form-label" style="font-size: 0.82rem; color: #cbd5e1; margin-bottom: 6px;">
+                <i class="fa-solid fa-list-ol"></i> Số lượng bài cần quét:
+              </label>
+              <select id="max_posts" class="form-input" style="font-size: 0.85rem; background: #0f172a; color: #fff; cursor: pointer;">
+                <option value="0" selected>⚡ TẤT CẢ bài viết trên trang (phân trang đến hết)</option>
+                <option value="5">⚡ 5 bài mới nhất (thử nghiệm nhanh)</option>
+                <option value="10">📄 10 bài mới nhất</option>
+                <option value="20">📄 20 bài mới nhất</option>
+                <option value="50">📄 50 bài mới nhất</option>
+                <option value="100">📄 100 bài mới nhất</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top: 8px; font-size: 0.78rem; color: #94a3b8;">
+            <i class="fa-solid fa-lightbulb" style="color: #fbbf24;"></i> <strong>Cơ chế hoạt động:</strong> Hệ thống tự động phân trang (timeline pagination) để thu thập tất cả các bài đăng của Fanpage, sau đó soi toàn bộ người thả Tim, Comment (kèm nội dung thật) và Share của từng bài và lập bảng xếp hạng theo tên người.
+          </div>
         </div>
 
-        <!-- Chế độ tải file Excel bài viết -->
-        <div id="box-post-file" style="display: none; border: 2px dashed rgba(56, 189, 248, 0.35); border-radius: var(--radius-sm); padding: 14px; text-align: center; background: rgba(56, 189, 248, 0.04);">
-          <i class="fa-solid fa-file-lines" style="font-size: 1.8rem; color: #38bdf8; margin-bottom: 6px;"></i>
-          <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">Tải lên file Excel chứa danh sách link bài viết</div>
-          <input type="file" id="input-post-file" accept=".xlsx, .xls" style="display: none;" onchange="handlePostFile(event)">
-          <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('input-post-file').click()">
-            <i class="fa-solid fa-arrow-up-from-bracket"></i> Chọn file Excel bài viết
-          </button>
-          <div id="post-file-status" style="margin-top: 6px; font-size: 0.8rem; color: #38bdf8; font-weight: 600;"></div>
+        <!-- KHUNG CHẾ ĐỘ 2: QUÉT DANH SÁCH BÀI VIẾT (ẨN MẶC ĐỊNH) -->
+        <div id="box-target-posts" style="display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 0.82rem; color: #cbd5e1;">Dán danh sách bài viết hoặc tải file Excel bài viết:</span>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" onclick="togglePostInputMode('text')" id="btn-mode-text" class="btn btn-sm btn-primary" style="padding: 2px 10px; font-size: 0.75rem;">Nhập Link</button>
+              <button type="button" onclick="togglePostInputMode('file')" id="btn-mode-file" class="btn btn-sm btn-secondary" style="padding: 2px 10px; font-size: 0.75rem;">Nạp file Excel</button>
+            </div>
+          </div>
+
+          <div id="box-post-text">
+            <textarea id="post_urls" class="form-input" rows="3" 
+                      placeholder="Dán các link bài viết Facebook vào đây (mỗi link 1 dòng)...&#10;https://www.facebook.com/tenpage/posts/123456789&#10;https://www.facebook.com/permalink.php?story_fbid=987654321"
+                      style="font-family: var(--font-mono); font-size: 0.85rem;"></textarea>
+          </div>
+
+          <div id="box-post-file" style="display: none; border: 2px dashed rgba(56, 189, 248, 0.35); border-radius: var(--radius-sm); padding: 14px; text-align: center; background: rgba(56, 189, 248, 0.04);">
+            <i class="fa-solid fa-file-lines" style="font-size: 1.8rem; color: #38bdf8; margin-bottom: 6px;"></i>
+            <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">Tải lên file Excel chứa danh sách link bài viết</div>
+            <input type="file" id="input-post-file" accept=".xlsx, .xls" style="display: none;" onchange="handlePostFile(event)">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="document.getElementById('input-post-file').click()">
+              <i class="fa-solid fa-arrow-up-from-bracket"></i> Chọn file Excel bài viết
+            </button>
+            <div id="post-file-status" style="margin-top: 6px; font-size: 0.8rem; color: #38bdf8; font-weight: 600;"></div>
+          </div>
         </div>
+
       </div>
 
       <!-- TÙY CHỌN & NÚT BẮT ĐẦU -->
@@ -168,7 +220,7 @@
 
     <!-- Terminal Screen -->
     <div id="terminal-screen" style="background: #0b0f19; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; height: 180px; overflow-y: auto; padding: 12px; font-family: var(--font-mono); font-size: 0.8rem; line-height: 1.5; color: #cbd5e1; word-break: normal; overflow-wrap: break-word;">
-      <div style="color: var(--text-muted);">Sẵn sàng. Nhập link bài viết và bấm "Bắt Đầu Quét Tương Tác"...</div>
+      <div style="color: var(--text-muted);">Sẵn sàng. Nhập link Fanpage hoặc link bài viết và bấm "Bắt Đầu Quét Tương Tác"...</div>
     </div>
   </div>
 
@@ -196,27 +248,105 @@
 
     <!-- Tabs Navigation -->
     <div style="display: flex; gap: 8px; margin-bottom: 18px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 8px; flex-wrap: wrap;">
-      <button type="button" class="btn btn-sm btn-primary" id="tab-btn-inspector" onclick="switchResultTab('inspector')">
-        <i class="fa-solid fa-layer-group"></i> 1. Xem Từng Bài Viết (Chi tiết Tim, CMT, Share)
+      <button type="button" class="btn btn-sm btn-primary" id="tab-btn-users" onclick="switchResultTab('users')">
+        <i class="fa-solid fa-ranking-star"></i> 1. Danh Sách Tên Người Tương Tác Toàn Trang
+      </button>
+      <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-inspector" onclick="switchResultTab('inspector')">
+        <i class="fa-solid fa-layer-group"></i> 2. Xem Từng Bài Viết (Chi tiết Tim, CMT, Share)
       </button>
       <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-members" onclick="switchResultTab('members')">
-        <i class="fa-solid fa-users"></i> 2. Đối soát Thành viên nhóm
-      </button>
-      <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-strangers" onclick="switchResultTab('strangers')">
-        <i class="fa-solid fa-user-group"></i> 3. Người ngoài nhóm
+        <i class="fa-solid fa-users"></i> 3. Đối soát Thành viên nhóm
       </button>
       <button type="button" class="btn btn-sm btn-secondary" id="tab-btn-posts" onclick="switchResultTab('posts')">
         <i class="fa-solid fa-table-list"></i> 4. Tổng hợp bài viết
       </button>
     </div>
 
-    <!-- TAB 1: CHIA CÁC BÀI RA THÀNH CÁC MỤC & CHỌN XEM CHI TIẾT NGƯỜI TIM, SHARE, COMMENT -->
-    <div id="tab-view-inspector">
+    <!-- TAB 1: BẢNG TỔNG HỢP TẤT CẢ TÊN NGƯỜI DÙNG TƯƠNG TÁC TOÀN TRANG (CHECK TÊN RA) -->
+    <div id="tab-view-users">
+      
+      <!-- Thẻ tóm tắt số liệu toàn trang -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">Người Dùng Tương Tác</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #38bdf8; margin-top: 4px;" id="stat-total-users">0</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Tên người thật đã cào</div>
+        </div>
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">Tổng Số Bài Viết</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #34d399; margin-top: 4px;" id="stat-total-posts">0</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Bài đăng đã phân tích</div>
+        </div>
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">Tổng Lượt Tim / Like</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #f87171; margin-top: 4px;" id="stat-total-likes">0</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Lượt cảm xúc</div>
+        </div>
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">Tổng Lượt Bình Luận</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #60a5fa; margin-top: 4px;" id="stat-total-comments">0</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Bao gồm cả câu trả lời</div>
+        </div>
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 14px;">
+          <div style="font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase;">Tổng Lượt Chia Sẻ</div>
+          <div style="font-size: 1.5rem; font-weight: 800; color: #fbbf24; margin-top: 4px;" id="stat-total-shares">0</div>
+          <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Lượt chia sẻ công khai</div>
+        </div>
+      </div>
+
+      <!-- Thanh bộ lọc & tìm kiếm tên người dùng toàn trang -->
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button type="button" class="btn btn-sm btn-primary" id="btn-user-filter-all" onclick="filterUsersDirectory('all')">
+            Tất cả (<span id="user-cnt-all">0</span>)
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-user-filter-like" onclick="filterUsersDirectory('like')">
+            ❤️ Đã Thả tim (<span id="user-cnt-like">0</span>)
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-user-filter-comment" onclick="filterUsersDirectory('comment')">
+            💬 Đã Bình luận (<span id="user-cnt-comment">0</span>)
+          </button>
+          <button type="button" class="btn btn-sm btn-secondary" id="btn-user-filter-share" onclick="filterUsersDirectory('share')">
+            🔁 Đã Chia sẻ (<span id="user-cnt-share">0</span>)
+          </button>
+        </div>
+
+        <div style="min-width: 280px;">
+          <input type="text" id="input-search-users" oninput="searchUsersDirectory(this.value)" 
+                 class="form-input" placeholder="🔍 Tìm tên người dùng hoặc Facebook ID..." style="padding: 6px 12px; font-size: 0.82rem;">
+        </div>
+      </div>
+
+      <!-- Bảng danh sách Tên Người Dùng Tương Tác Toàn Trang -->
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+          <thead>
+            <tr style="background: rgba(15, 23, 42, 0.9); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary);">
+              <th style="padding: 10px 14px; width: 60px;">STT</th>
+              <th style="padding: 10px 14px; min-width: 200px;">Họ và tên người dùng Facebook</th>
+              <th style="padding: 10px 14px; min-width: 140px;">Facebook ID</th>
+              <th style="padding: 10px 14px; text-align: center; width: 110px;">❤️ Đã Tim</th>
+              <th style="padding: 10px 14px; text-align: center; width: 110px;">💬 Đã Bình luận</th>
+              <th style="padding: 10px 14px; text-align: center; width: 100px;">🔁 Đã Share</th>
+              <th style="padding: 10px 14px; text-align: center; width: 120px;">Tổng tương tác</th>
+              <th style="padding: 10px 14px; text-align: center; width: 140px;">Tỷ lệ tương tác</th>
+            </tr>
+          </thead>
+          <tbody id="table-users-body">
+            <tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Đang chờ kết quả quét...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+
+    <!-- TAB 2: CHIA CÁC BÀI RA THÀNH CÁC MỤC & CHỌN XEM CHI TIẾT NGƯỜI TIM, SHARE, COMMENT CỦA TỪNG BÀI -->
+    <div id="tab-view-inspector" style="display: none;">
       
       <!-- Danh sách bài viết dạng thẻ chọn (Post Cards Selector) -->
       <div style="margin-bottom: 16px;">
         <div style="font-size: 0.88rem; font-weight: 700; color: #38bdf8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
-          <span><i class="fa-solid fa-folder-tree"></i> BẤM CHỌN BÀI VIẾT ĐỂ XEM DANH SÁCH NGƯỜI TƯƠNG TÁC:</span>
+          <span><i class="fa-solid fa-folder-tree"></i> BẤM CHỌN BÀI VIẾT ĐỂ XEM DANH SÁCH NGƯỜI TƯƠNG TÁC CỦA BÀI:</span>
           <span id="inspector-posts-count" style="font-size: 0.8rem; color: var(--text-muted);">0 bài viết</span>
         </div>
         

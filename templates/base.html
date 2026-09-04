@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}FB Tracking No-API Pro{% endblock %} — Quét Tương Tác Không Cần Graph API</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=3.0.0">
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+  <!-- Top Navbar -->
+  <nav class="navbar">
+    <div class="brand">
+      <div class="brand-icon">
+        <i class="fa-solid fa-bolt-lightning" style="color: #fbbf24;"></i>
+      </div>
+      <a href="/" style="text-decoration: none;">
+        <span class="brand-name">FB TRACKER PRO</span>
+      </a>
+      <span class="badge-no-api">KHÔNG CẦN API</span>
+    </div>
+
+    <div class="nav-actions">
+      <!-- Hotline Kích hoạt tài khoản -->
+      <a href="tel:0984113158" class="hotline-btn" title="Liên hệ kích hoạt tài khoản">
+        <i class="fa-solid fa-phone-volume"></i>
+        <span>Hotline / Zalo: 0984113158</span>
+      </a>
+
+      {% if current_user %}
+        {% if current_user.role == 'admin' %}
+          <a href="/admin" class="btn btn-sm btn-secondary" style="border-color: #f87171; color: #fca5a5;">
+            <i class="fa-solid fa-shield-halved"></i> Quản Trị
+          </a>
+        {% endif %}
+
+        <div class="user-profile">
+          <div class="user-avatar">
+            {{ current_user.full_name[0] | upper }}
+          </div>
+          <span class="user-name">{{ current_user.full_name }}</span>
+          {% if current_user.role == 'admin' %}
+            <span class="user-role-admin">ADMIN</span>
+          {% endif %}
+          <a href="/logout" title="Đăng xuất" style="color: var(--text-muted); margin-left: 6px;">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </a>
+        </div>
+      {% else %}
+        <a href="/login" class="btn btn-sm btn-secondary">Đăng nhập</a>
+        <a href="/register" class="btn btn-sm btn-primary">Đăng ký</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- Main Content Body -->
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer style="text-align: center; padding: 24px; border-top: 1px solid var(--border-subtle); color: var(--text-muted); font-size: 0.85rem; margin-top: 40px;">
+    <p>© 2026 FB Tracking No-API Pro. Hệ thống phân tích tương tác Fanpage & Nhóm Facebook không cần Meta Developer.</p>
+    <p style="margin-top: 4px;">
+      Hotline / Zalo hỗ trợ: <a href="https://zalo.me/0984113158" target="_blank" style="color: #fbbf24; font-weight: 600;">0984113158</a> (Liên hệ để kích hoạt tài khoản)
+    </p>
+  </footer>
+
+  <script src="/static/js/auth.js?v=3.0.0"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

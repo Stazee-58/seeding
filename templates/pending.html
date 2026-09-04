@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Chờ kích hoạt tài khoản — FB Tracking No-API Pro{% endblock %}
+
+{% block content %}
+<div style="max-width: 580px; margin: 40px auto;">
+
+  <div class="card" style="text-align: center; padding: 40px 32px;">
+    
+    <div style="width: 72px; height: 72px; background: rgba(245, 158, 11, 0.15); border: 2px solid rgba(245, 158, 11, 0.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: #fbbf24; font-size: 2rem;">
+      <i class="fa-solid fa-user-clock"></i>
+    </div>
+
+    <h2 style="font-size: 1.5rem; font-weight: 800; color: #f8fafc; margin-bottom: 8px;">
+      Tài Khoản Đang Chờ Kích Hoạt
+    </h2>
+
+    <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 24px;">
+      Xin chào <strong>{{ current_user.full_name }}</strong> ({{ current_user.email }}).<br>
+      Tài khoản của bạn đã được đăng ký thành công trên hệ thống nhưng đang ở trạng thái <em>Chờ duyệt</em>.
+    </p>
+
+    <!-- Box thông báo nổi bật -->
+    <div class="activation-banner" style="text-align: left; margin: 0 auto 28px; background: rgba(245, 158, 11, 0.1); border: 1px dashed rgba(245, 158, 11, 0.5); padding: 16px; border-radius: var(--radius-sm);">
+      <div class="activation-text">
+        <h4 style="display: flex; align-items: center; gap: 8px; color: #fbbf24;">
+          <i class="fa-solid fa-phone-volume"></i>
+          <span>LIÊN HỆ ĐỂ KÍCH HOẠT TÀI KHOẢN</span>
+        </h4>
+        <p style="margin-top: 6px; font-size: 0.9rem; color: #fde68a;">
+          Vui lòng gọi điện hoặc nhắn tin Zalo tới quản trị viên để kích hoạt tài khoản ngay lập tức:
+        </p>
+        <div style="margin-top: 14px; display: flex; gap: 12px; flex-wrap: wrap;">
+          <a href="tel:0984113158" class="btn btn-sm btn-primary" style="background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);">
+            <i class="fa-solid fa-phone"></i> Gọi ngay: 0984113158
+          </a>
+          <a href="https://zalo.me/0984113158" target="_blank" class="btn btn-sm btn-secondary" style="border-color: #06b6d4; color: #38bdf8;">
+            <i class="fa-solid fa-comment-dots"></i> Chat Zalo: 0984113158
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: center; gap: 12px;">
+      <a href="/" class="btn btn-secondary">
+        <i class="fa-solid fa-rotate-right"></i> Kiểm tra lại trạng thái
+      </a>
+      <a href="/logout" class="btn" style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4);">
+        <i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng xuất
+      </a>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

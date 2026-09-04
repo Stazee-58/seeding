@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+
+{% block title %}Trang Quản Trị Tài Khoản — FB Tracking No-API Pro{% endblock %}
+
+{% block content %}
+<div>
+
+  <!-- Admin Header -->
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 14px;">
+    <div>
+      <h1 style="font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px;">
+        <i class="fa-solid fa-user-shield" style="color: #f87171;"></i>
+        <span>Quản Trị Tài Khoản Hệ Thống</span>
+      </h1>
+      <p style="color: var(--text-secondary); font-size: 0.95rem; margin-top: 4px;">
+        Duyệt, kích hoạt tài khoản người dùng và quản lý phân quyền thành viên.
+      </p>
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <a href="/" class="btn btn-secondary">
+        <i class="fa-solid fa-arrow-left"></i> Về Dashboard Tracking
+      </a>
+      <button onclick="location.reload()" class="btn btn-primary">
+        <i class="fa-solid fa-rotate"></i> Làm mới danh sách
+      </button>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="grid-4" style="margin-bottom: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+    <div class="card" style="padding: 16px;">
+      <div style="font-size: 0.85rem; color: var(--text-secondary);">Tổng người dùng</div>
+      <div style="font-size: 1.8rem; font-weight: 800; margin: 4px 0;" id="stat-total">{{ users | length }}</div>
+      <div style="font-size: 0.8rem; color: var(--text-muted);">Đã đăng ký tài khoản</div>
+    </div>
+
+    <div class="card" style="padding: 16px; border-color: rgba(245, 158, 11, 0.3);">
+      <div style="font-size: 0.85rem; color: #fbbf24;">Chờ kích hoạt</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: #fbbf24; margin: 4px 0;" id="stat-pending">
+        {{ users | selectattr('is_active', 'equalto', 0) | list | length }}
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-muted);">Cần admin phê duyệt</div>
+    </div>
+
+    <div class="card" style="padding: 16px; border-color: rgba(16, 185, 129, 0.3);">
+      <div style="font-size: 0.85rem; color: #34d399;">Đã kích hoạt</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: #34d399; margin: 4px 0;" id="stat-active">
+        {{ users | selectattr('is_active', 'equalto', 1) | list | length }}
+      </div>
+      <div style="font-size: 0.8rem; color: var(--text-muted);">Đang được dùng web</div>
+    </div>
+
+    <div class="card" style="padding: 16px;">
+      <div style="font-size: 0.85rem; color: var(--text-secondary);">Hotline Kích Hoạt</div>
+      <div style="font-size: 1.4rem; font-weight: 800; color: #38bdf8; margin: 4px 0;">0984113158</div>
+      <div style="font-size: 0.8rem; color: var(--text-muted);">Khách gọi kích hoạt</div>
+    </div>
+  </div>
+
+  <!-- User Table -->
+  <div class="card" style="padding: 0; overflow: hidden;">
+    <div style="padding: 18px 24px; border-bottom: 1px solid var(--border-subtle); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <h3 style="font-size: 1.1rem; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+        <i class="fa-solid fa-users"></i>
+        <span>Danh sách người dùng đăng ký</span>
+      </h3>
+      <span style="font-size: 0.85rem; color: var(--text-muted);">
+        Bấm nút để kích hoạt hoặc tạm dừng tài khoản
+      </span>
+    </div>
+
+    <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+        <thead>
+          <tr style="background: rgba(15, 23, 42, 0.7); border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase;">
+            <th style="padding: 14px 18px;">ID</th>
+            <th style="padding: 14px 18px;">Họ và Tên</th>
+            <th style="padding: 14px 18px;">Email</th>
+            <th style="padding: 14px 18px;">Số Điện Thoại</th>
+            <th style="padding: 14px 18px; text-align: center;">Vai trò</th>
+            <th style="padding: 14px 18px; text-align: center;">Trạng thái</th>
+            <th style="padding: 14px 18px;">Ngày đăng ký</th>
+            <th style="padding: 14px 18px; text-align: center;">Hành động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+            <tr id="row-user-{{ u.id }}" style="border-bottom: 1px solid var(--border-subtle); transition: background 0.15s;">
+              <td style="padding: 14px 18px; color: var(--text-muted); font-family: var(--font-mono);">#{{ u.id }}</td>
+              <td style="padding: 14px 18px; font-weight: 600; color: #fff;">
+                {{ u.full_name }}
+                {% if u.email == 'nguyenhaonhien40@gmail.com' %}
+                  <span style="font-size: 0.7rem; background: rgba(239, 68, 68, 0.2); color: #f87171; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">Super Admin</span>
+                {% endif %}
+              </td>
+              <td style="padding: 14px 18px; font-family: var(--font-mono); font-size: 0.85rem; color: #93c5fd;">{{ u.email }}</td>
+              <td style="padding: 14px 18px; font-family: var(--font-mono); font-size: 0.85rem;">
+                {% if u.phone %}
+                  <a href="tel:{{ u.phone }}" style="color: #fbbf24;">{{ u.phone }}</a>
+                {% else %}
+                  <span style="color: var(--text-muted);">-</span>
+                {% endif %}
+              </td>
+              <td style="padding: 14px 18px; text-align: center;">
+                {% if u.role == 'admin' %}
+                  <span style="background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem; font-weight: 700;">ADMIN</span>
+                {% else %}
+                  <span style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; padding: 2px 8px; border-radius: 9999px; font-size: 0.75rem;">User</span>
+                {% endif %}
+              </td>
+              <td style="padding: 14px 18px; text-align: center;" id="status-badge-{{ u.id }}">
+                {% if u.is_active == 1 %}
+                  <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600;">
+                    <i class="fa-solid fa-circle-check"></i> Đã kích hoạt
+                  </span>
+                {% else %}
+                  <span style="background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); padding: 4px 10px; border-radius: 9999px; font-size: 0.8rem; font-weight: 600;">
+                    <i class="fa-solid fa-clock"></i> Chờ duyệt
+                  </span>
+                {% endif %}
+              </td>
+              <td style="padding: 14px 18px; font-size: 0.8rem; color: var(--text-muted);">{{ u.created_at }}</td>
+              <td style="padding: 14px 18px; text-align: center;">
+                {% if u.email != 'nguyenhaonhien40@gmail.com' %}
+                  <div style="display: flex; gap: 6px; justify-content: center;">
+                    <button id="btn-toggle-{{ u.id }}" 
+                            onclick="toggleUserActive({{ u.id }}, {{ u.is_active }})" 
+                            class="btn btn-sm {% if u.is_active == 1 %}btn-secondary{% else %}btn-primary{% endif %}"
+                            style="padding: 4px 10px; font-size: 0.8rem;">
+                      {% if u.is_active == 1 %}
+                        <i class="fa-solid fa-lock"></i> Khóa
+                      {% else %}
+                        <i class="fa-solid fa-check"></i> Kích hoạt
+                      {% endif %}
+                    </button>
+                    <button onclick="deleteUser({{ u.id }}, '{{ u.email }}')" 
+                            class="btn btn-sm" 
+                            style="padding: 4px 8px; font-size: 0.8rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171;"
+                            title="Xóa tài khoản">
+                      <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                  </div>
+                {% else %}
+                  <span style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">(Tài khoản chính)</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/admin.js?v=3.0.0"></script>
+{% endblock %}

@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Database & temporary files
+*.db
+*.log
+/tmp/
+
+# Reports generated
+reports/
+*.xlsx
+!members.xlsx
+!posts.xlsx
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+.vercel

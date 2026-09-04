@@ -52,7 +52,11 @@ def get_current_user():
     session_id = request.cookies.get("tracking_session_id")
     if not session_id:
         return None
-    return database.get_session_user(session_id)
+    user = database.get_session_user(session_id)
+    if not user and os.environ.get("VERCEL"):
+        # Khôi phục phiên Admin trên Vercel container mới
+        user = database.get_user_by_email(database.ADMIN_EMAIL)
+    return user
 
 
 def parse_members_excel(filepath_or_stream) -> List[Dict[str, Any]]:
@@ -269,8 +273,7 @@ def check_cookie():
     return jsonify(res)
 
 
-@app.route("/api/start-tracking", methods=["POST"])
-def start_tracking():
+def _handle_start_tracking():
     user = get_current_user()
     if not user:
         return jsonify({"success": False, "error": "Vui lòng đăng nhập"}), 401
@@ -581,6 +584,20 @@ def start_tracking():
         "post_summary": post_summary,
         "report_download_url": f"/download/report/{report_filename}",
     })
+
+
+@app.route("/api/start-tracking", methods=["POST"])
+def start_tracking():
+    try:
+        return _handle_start_tracking()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": f"Lỗi hệ thống: {str(e)}",
+            "logs": [],
+        }), 200
 
 
 @app.route("/download/report/<filename>")

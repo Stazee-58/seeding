@@ -193,12 +193,15 @@ async function startTracking() {
       body: formData
     });
 
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok || !contentType.includes('application/json')) {
-      const textErr = await res.text();
-      let errMsg = `Lỗi máy chủ (${res.status})`;
-      if (res.status === 504 || textErr.includes('504') || textErr.includes('TIMEOUT')) {
-        errMsg = 'Quá trình cào dữ liệu vượt quá thời gian phản hồi máy chủ (504 Timeout). Hệ thống đã được tối ưu siêu tốc, vui lòng bấm thử lại!';
+    const textResp = await res.text();
+    let data;
+    try {
+      data = JSON.parse(textResp);
+    } catch (parseErr) {
+      console.error('Non-JSON response:', textResp);
+      let errMsg = `Lỗi phản hồi từ máy chủ (${res.status})`;
+      if (res.status === 504 || textResp.includes('504') || textResp.includes('TIMEOUT')) {
+        errMsg = 'Máy chủ phản hồi chậm (504 Timeout). Hệ thống đã tối ưu, vui lòng bấm thử lại!';
       } else if (res.status === 401) {
         errMsg = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!';
         window.location.href = '/login';
@@ -208,8 +211,6 @@ async function startTracking() {
       alert(errMsg);
       return;
     }
-
-    const data = await res.json();
 
     if (data.success) {
       trackingData = data;

@@ -211,6 +211,9 @@ async function startTracking() {
       document.getElementById('results-container').scrollIntoView({ behavior: 'smooth' });
 
     } else {
+      if (data.logs && Array.isArray(data.logs)) {
+        data.logs.forEach(l => appendLog(l.msg, l.level));
+      }
       appendLog(`❌ Lỗi: ${data.error || 'Quá trình quét thất bại'}`, 'error');
       alert('Lỗi: ' + (data.error || 'Quá trình quét thất bại'));
     }

@@ -273,6 +273,23 @@ def check_cookie():
     return jsonify(res)
 
 
+def sanitize_for_json(obj: Any) -> Any:
+    """Đảm bảo mọi chuỗi text không chứa ký tự surrogate lỗi gây crash UTF-8."""
+    if isinstance(obj, str):
+        try:
+            return obj.encode('utf-16', 'surrogatepass').decode('utf-16').encode('utf-8', 'ignore').decode('utf-8')
+        except Exception:
+            try:
+                return obj.encode('utf-8', 'ignore').decode('utf-8')
+            except Exception:
+                return "".join(c for c in obj if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(x) for x in obj]
+    return obj
+
+
 def _handle_start_tracking():
     user = get_current_user()
     if not user:
@@ -570,7 +587,7 @@ def _handle_start_tracking():
         report_path=report_file_path,
     )
 
-    return jsonify({
+    response_payload = {
         "success": True,
         "has_members": has_members,
         "total_posts": len(collected),
@@ -583,7 +600,8 @@ def _handle_start_tracking():
         "strangers": strangers,
         "post_summary": post_summary,
         "report_download_url": f"/download/report/{report_filename}",
-    })
+    }
+    return jsonify(sanitize_for_json(response_payload))
 
 
 @app.route("/api/start-tracking", methods=["POST"])

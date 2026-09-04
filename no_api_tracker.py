@@ -45,21 +45,35 @@ DESKTOP_HEADERS = {
 
 
 def clean_unicode(txt: str) -> str:
-    """Giải mã an toàn các ký tự escape unicode (\\uXXXX) từ payload JSON của Facebook."""
+    """Giải mã an toàn các ký tự escape unicode (\\uXXXX) và emoji surrogate pairs từ payload JSON của Facebook."""
     if not txt:
         return ""
     try:
-        res = re.sub(
-            r'\\u([0-9a-fA-F]{4})',
-            lambda m: chr(int(m.group(1), 16)),
-            txt
-        )
-        return res.replace('\\/', '/').replace('\\"', '"').replace('\\\\', '\\')
+        txt = txt.encode('utf-16', 'surrogatepass').decode('utf-16')
     except Exception:
+        pass
+
+    if "\\u" in txt:
         try:
-            return txt.encode().decode('unicode-escape')
+            import json
+            sanitized = txt.replace('\\"', '"').replace('"', '\\"')
+            txt = json.loads(f'"{sanitized}"')
         except Exception:
-            return txt
+            try:
+                txt = re.sub(
+                    r'\\u([0-9a-fA-F]{4})',
+                    lambda m: chr(int(m.group(1), 16)),
+                    txt
+                ).encode('utf-16', 'surrogatepass').decode('utf-16')
+            except Exception:
+                pass
+
+    try:
+        txt = txt.encode('utf-8', 'ignore').decode('utf-8')
+    except Exception:
+        txt = "".join(c for c in txt if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+
+    return txt.replace('\\/', '/').replace('\\"', '"').replace('\\\\', '\\')
 
 
 def parse_cookie_string(cookie_str: str) -> Dict[str, str]:

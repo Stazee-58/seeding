@@ -192,6 +192,23 @@ async function startTracking() {
       method: 'POST',
       body: formData
     });
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok || !contentType.includes('application/json')) {
+      const textErr = await res.text();
+      let errMsg = `Lỗi máy chủ (${res.status})`;
+      if (res.status === 504 || textErr.includes('504') || textErr.includes('TIMEOUT')) {
+        errMsg = 'Quá trình cào dữ liệu vượt quá thời gian phản hồi máy chủ (504 Timeout). Hệ thống đã được tối ưu siêu tốc, vui lòng bấm thử lại!';
+      } else if (res.status === 401) {
+        errMsg = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!';
+        window.location.href = '/login';
+        return;
+      }
+      appendLog(`❌ ${errMsg}`, 'error');
+      alert(errMsg);
+      return;
+    }
+
     const data = await res.json();
 
     if (data.success) {
@@ -218,8 +235,8 @@ async function startTracking() {
       alert('Lỗi: ' + (data.error || 'Quá trình quét thất bại'));
     }
   } catch (err) {
-    appendLog(`❌ Lỗi kết nối máy chủ: ${err}`, 'error');
-    alert('Lỗi kết nối máy chủ: ' + err);
+    appendLog(`❌ Lỗi kết nối: ${err}`, 'error');
+    alert('Lỗi kết nối: ' + err);
   } finally {
     btnStart.disabled = false;
     btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Bắt Đầu Quét Tương Tác';

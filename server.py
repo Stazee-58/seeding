@@ -408,15 +408,22 @@ def _handle_start_tracking():
             "comments": cmts,
             "reactions": reacts,
             "shares": shrs,
+            "likes_count": p.get("likes_count", len(reacts)),
+            "comments_count": p.get("comments_count", len(cmts)),
+            "shares_count": p.get("shares_count", len(shrs)),
+            "total_reactions": p.get("total_reactions", len(reacts)),
+            "total_shares": p.get("total_shares", len(shrs)),
         }
 
         posts_details.append({
             "post_id": pid,
             "mo_ta": mo_ta,
             "permalink_url": p_url,
-            "likes_count": len(reacts),
-            "comments_count": len(cmts),
-            "shares_count": len(shrs),
+            "likes_count": p.get("likes_count", len(reacts)),
+            "comments_count": p.get("comments_count", len(cmts)),
+            "shares_count": p.get("shares_count", len(shrs)),
+            "total_reactions": p.get("total_reactions", len(reacts)),
+            "total_shares": p.get("total_shares", len(shrs)),
             "reactions": reacts,
             "comments": cmts,
             "shares": shrs,
@@ -542,9 +549,9 @@ def _handle_start_tracking():
     # Thống kê bài viết
     post_summary = []
     for pid, pdata in collected.items():
-        likes_cnt = len(pdata.get("reactions", []))
-        cmts_cnt = len(pdata.get("comments", []))
-        shares_cnt = len(pdata.get("shares", []))
+        likes_cnt = pdata.get("likes_count", len(pdata.get("reactions", [])))
+        cmts_cnt = pdata.get("comments_count", len(pdata.get("comments", [])))
+        shares_cnt = pdata.get("shares_count", len(pdata.get("shares", [])))
 
         total_mems = len(members)
         if total_mems > 0 and match_results:

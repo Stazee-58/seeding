@@ -235,9 +235,9 @@ def generate_excel_report(
             pid,
             pdata.get("mo_ta", f"Bài {pid}"),
             pdata.get("permalink_url", ""),
-            len(pdata.get("reactions", [])),
-            len(pdata.get("comments", [])),
-            len(pdata.get("shares", [])),
+            pdata.get("likes_count", len(pdata.get("reactions", []))),
+            pdata.get("comments_count", len(pdata.get("comments", []))),
+            pdata.get("shares_count", len(pdata.get("shares", []))),
         ]
         _write_row(ws3, idx + 1, row_vals)
 

@@ -663,6 +663,22 @@ function renderCurrentPostTable(searchQuery = '') {
     );
   }
 
+  const hintBanner = document.getElementById('inspector-hint-banner');
+  const hintText = document.getElementById('inspector-hint-text');
+  if (hintBanner && hintText) {
+    let totalTarget = totalInteractions;
+    if (currentPostFilterType === 'like') totalTarget = post.likes_count || 0;
+    else if (currentPostFilterType === 'comment') totalTarget = post.comments_count || 0;
+    else if (currentPostFilterType === 'share') totalTarget = post.shares_count || 0;
+
+    if (totalTarget > filtered.length && !q) {
+      hintBanner.style.display = 'block';
+      hintText.innerText = `Đang hiển thị ${filtered.length}/${totalTarget} người dùng đã bóc tách chi tiết (Facebook hiển thị xem trước công khai khi chưa có Cookie tài khoản).`;
+    } else {
+      hintBanner.style.display = 'none';
+    }
+  }
+
   if (filtered.length === 0) {
     tableBody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 24px; color: var(--text-muted);">Không tìm thấy người tương tác nào ${currentPostFilterType !== 'all' ? `cho mục này` : ''}</td></tr>`;
     return;

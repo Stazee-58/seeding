@@ -359,12 +359,13 @@ class NoApiFacebookTracker:
                 rx_id = str(rx_info.get("id") or "")
 
                 rx_type = "LIKE"
-                if rx_id == "1678524965767432": rx_type = "LOVE"
-                elif rx_id == "1678525005767428": rx_type = "CARE"
-                elif rx_id == "1678525049100757": rx_type = "HAHA"
-                elif rx_id == "1678525162434079": rx_type = "WOW"
-                elif rx_id == "1678525202434075": rx_type = "SAD"
-                elif rx_id == "1678525249100737": rx_type = "ANGRY"
+                if rx_id in ("1678524932434102", "1678524965767432"): rx_type = "LOVE"
+                elif rx_id in ("613557422527858", "1678525005767428"): rx_type = "CARE"
+                elif rx_id in ("115940658764963", "1678525049100757"): rx_type = "HAHA"
+                elif rx_id in ("1678525162434079",): rx_type = "WOW"
+                elif rx_id in ("1678525202434075",): rx_type = "SAD"
+                elif rx_id in ("1678525249100737",): rx_type = "ANGRY"
+                elif rx_id in ("1635855486666999",): rx_type = "LIKE"
 
                 dedup_key = uid if uid else name.lower()
                 if dedup_key and dedup_key not in seen and len(name) >= 2:
@@ -390,26 +391,78 @@ class NoApiFacebookTracker:
         rx, _ = self.fetch_reactions(post_url, post_id, html_post)
         return rx
 
-    def _extract_comments_from_html(self, html_post: str, post_id: str) -> List[Dict[str, Any]]:
+    def _extract_comments_from_html(self, html_post: str, post_id: str) -> Tuple[List[Dict[str, Any]], int]:
         comments: List[Dict[str, Any]] = []
         if not html_post:
-            return comments
-        seen_comment_keys = set()
+            return comments, 0
+
+        # 1. Trích xuất tổng số lượng bình luận chính thức từ Facebook
+        total_cmts_count = 0
+        m1 = re.search(r'"comments":\{"total_count":(\d+)\}', html_post)
+        if m1:
+            total_cmts_count = int(m1.group(1))
+        else:
+            m2 = re.search(r'"comment_rendering_instance":\{"comments":\{"total_count":(\d+)', html_post)
+            if m2:
+                total_cmts_count = int(m2.group(1))
+            else:
+                m3 = re.search(r'"total_comment_count":(\d+)', html_post)
+                if m3:
+                    total_cmts_count = int(m3.group(1))
+                else:
+                    m4 = re.search(r'"comment_count":\{"total_count":(\d+)', html_post)
+                    if m4:
+                        total_cmts_count = int(m4.group(1))
+
+        # 2. Bóc tách toàn bộ comment nodes trong HTML
+        seen_fbids = set()
+        seen_keys = set()
+
+        for m in re.finditer(r'"legacy_fbid":"(\d+)"', html_post):
+            fbid = m.group(1)
+            if fbid in seen_fbids:
+                continue
+            pos = m.start()
+            window = html_post[pos:pos+3500]
+            body_m = re.search(r'"body":\{"text":"(.*?)"(?:,|\})', window)
+            author_m = re.search(r'"author":\{"__typename":"(?:User|Page)","id":"([^"]+)","name":"([^"]+)"', window)
+            if not author_m:
+                back_win = html_post[max(0, pos-1500):pos+1500]
+                author_m = re.search(r'"author":\{"__typename":"(?:User|Page)","id":"([^"]+)","name":"([^"]+)"', back_win)
+                if not body_m:
+                    body_m = re.search(r'"body":\{"text":"(.*?)"(?:,|\})', back_win)
+
+            if author_m:
+                uid = author_m.group(1)
+                name = clean_unicode(author_m.group(2))
+                msg = clean_unicode(body_m.group(1)) if body_m else ""
+                seen_fbids.add(fbid)
+                k = f"{uid}_{name}_{msg[:30]}"
+                if k not in seen_keys:
+                    seen_keys.add(k)
+                    comments.append({
+                        "id": fbid,
+                        "from_id": uid,
+                        "from_name": name,
+                        "message": msg,
+                        "created_time": "",
+                    })
+
         idx = 0
         while True:
             pos = html_post.find('"body":{"text":', idx)
             if pos == -1:
                 break
-            chunk = html_post[pos:pos+700]
-            msg_m = re.search(r'"body":\{"text":"(.*?)"', chunk)
-            name_m = re.search(r'"author":\{"__typename":"User","id":"([^"]+)","name":"([^"]+)"', chunk)
+            chunk = html_post[max(0, pos-500):min(len(html_post), pos+1500)]
+            msg_m = re.search(r'"body":\{"text":"(.*?)"(?:,|\})', chunk)
+            name_m = re.search(r'"author":\{"__typename":"(?:User|Page)","id":"([^"]+)","name":"([^"]+)"', chunk)
             if msg_m and name_m:
                 uid = name_m.group(1)
                 msg = clean_unicode(msg_m.group(1))
                 name = clean_unicode(name_m.group(2))
-                dedup_key = f"{uid}_{name}_{msg[:30]}"
-                if dedup_key not in seen_comment_keys:
-                    seen_comment_keys.add(dedup_key)
+                k = f"{uid}_{name}_{msg[:30]}"
+                if k not in seen_keys and len(name) >= 2:
+                    seen_keys.add(k)
                     comments.append({
                         "id": f"c_{uid}_{len(comments)+1}",
                         "from_id": uid,
@@ -419,8 +472,9 @@ class NoApiFacebookTracker:
                     })
             idx = pos + 15
 
-        self.log(f"✅ Đã cào được {len(comments)} bình luận thật trên bài viết ID {post_id}.", "success")
-        return comments
+        official_cmts = max(len(comments), total_cmts_count)
+        self.log(f"💬 Đã cào được {len(comments)} bình luận chi tiết trên bài viết ID {post_id} (Tổng ghi nhận trên Facebook: {official_cmts}).", "success")
+        return comments, official_cmts
 
     # -------------------------------------------------------------------------
     # 1. Cào Lượt Thả Tim / Cảm Xúc (Reactions)
@@ -428,21 +482,23 @@ class NoApiFacebookTracker:
     def fetch_reactions(self, post_url: str, post_id: str, html_post: str = "") -> Tuple[List[Dict[str, Any]], int]:
         """
         Cào Lượt Thả Tim / Cảm Xúc (Reactions) thật 100%:
-        1. Gọi Facebook GraphQL Engine (CometUFIReactionsDialogQuery)
-        2. Bổ sung các Actor tìm thấy trực tiếp từ HTML Payload
+        1. Trích xuất tổng số lượng cảm xúc chính thức từ Facebook
+        2. Gọi Facebook GraphQL Engine (CometUFIReactionsDialogQuery) lấy danh sách người thả tim thật
         3. Dự phòng mbasic nếu người dùng đã đăng nhập Cookie
         """
         reactions: List[Dict[str, Any]] = []
         seen_ids = set()
 
-        # 1. Trích xuất tổng số lượng cảm xúc từ Facebook
+        # 1. Trích xuất tổng số lượng cảm xúc từ Facebook (Chuẩn 100%)
         total_cnt = 0
         if html_post:
             cnt_m = re.search(r'"reaction_count":\{"count":(\d+)', html_post)
             if cnt_m:
                 total_cnt = int(cnt_m.group(1))
+            elif re.search(r'"i18n_reaction_count":"(\d+)"', html_post):
+                total_cnt = int(re.search(r'"i18n_reaction_count":"(\d+)"', html_post).group(1))
 
-        # 2. Quét qua Facebook GraphQL Engine (cực nhanh, hoạt động cả khi có/không có cookie)
+        # 2. Quét qua Facebook GraphQL Engine (lấy người thả tim thật 100%)
         try:
             graphql_reactors = self._fetch_graphql_reactions(post_id, html_post)
             for r in graphql_reactors:
@@ -455,27 +511,8 @@ class NoApiFacebookTracker:
         except Exception as e:
             self.log(f"⚠️ Quét GraphQL Reactions gặp lỗi: {e}", "warning")
 
-        # 3. Bổ sung các Actor trong HTML Payload nếu chưa có
-        if html_post:
-            page_id_m = re.search(r'(?:id=|\/)(\d{10,30})', post_url)
-            page_id = page_id_m.group(1) if page_id_m else ""
-            actors = re.findall(r'"__typename":"User","id":"([^"]+)","name":"([^"]+)"', html_post)
-            for uid, raw_name in actors:
-                if page_id and uid == page_id:
-                    continue
-                name = clean_unicode(raw_name)
-                key = uid if uid else name.lower()
-                if key not in seen_ids and len(name) >= 2:
-                    seen_ids.add(key)
-                    reactions.append({
-                        "id": uid,
-                        "name": name,
-                        "type": "LIKE",
-                        "profile_url": f"https://www.facebook.com/{uid}",
-                    })
-
-        # 4. Dự phòng mbasic nếu có cookie và chưa đủ
-        if self.cookies and "c_user" in self.cookies and len(reactions) < total_cnt:
+        # 3. Dự phòng mbasic nếu có cookie và chưa đủ
+        if self.cookies and "c_user" in self.cookies and (total_cnt == 0 or len(reactions) < total_cnt):
             try:
                 base_reaction_url = f"https://mbasic.facebook.com/ufi/reaction/profile/browser/?ft_ent_identifier={post_id}"
                 res = self.session.get(base_reaction_url, timeout=5)
@@ -507,28 +544,31 @@ class NoApiFacebookTracker:
             except Exception:
                 pass
 
+        official_count = total_cnt if total_cnt > 0 else len(reactions)
         if total_cnt > 0:
             if len(reactions) >= total_cnt:
                 self.log(f"❤️ Đã nhận diện đầy đủ 100% ({len(reactions)}/{total_cnt}) người thả tim trên bài viết ID {post_id}.", "success")
             else:
-                self.log(f"❤️ Đã nhận diện {len(reactions)}/{total_cnt} người thả tim thật trên bài viết ID {post_id}.", "info")
-                if not (self.cookies and "c_user" in self.cookies):
-                    self.log(f"💡 Lưu ý: Facebook chỉ mở xem trước {len(reactions)}/{total_cnt} người thả tim khi chưa đăng nhập. Dán Cookie tài khoản ở mục Cài đặt để quét đầy đủ 100% tất cả {total_cnt} người.", "warning")
+                self.log(f"❤️ Đã nhận diện {len(reactions)}/{total_cnt} người thả tim thật trên bài viết ID {post_id} (Tổng ghi nhận trên Facebook: {total_cnt}).", "info")
         else:
             self.log(f"✅ Đã cào được {len(reactions)} lượt cảm xúc thật trên bài viết ID {post_id}.", "success")
 
-        return reactions, max(len(reactions), total_cnt)
+        return reactions, official_count
 
     # -------------------------------------------------------------------------
     # 2. Cào Bình Luận (Comments)
     # -------------------------------------------------------------------------
-    def fetch_comments(self, post_url: str, post_id: str) -> List[Dict[str, Any]]:
+    def fetch_comments(self, post_url: str, post_id: str, html_post: str = "") -> Tuple[List[Dict[str, Any]], int]:
         comments: List[Dict[str, Any]] = []
-        seen_comment_keys = set()
+        official_cmts = 0
 
-        if self.cookies and "c_user" in self.cookies:
+        if html_post:
+            comments, official_cmts = self._extract_comments_from_html(html_post, post_id=post_id)
+
+        if self.cookies and "c_user" in self.cookies and (official_cmts == 0 or len(comments) < official_cmts):
             target_url: Optional[str] = f"https://mbasic.facebook.com/{post_id}"
             page_count = 0
+            seen_comment_keys = {f"{c.get('from_id')}_{c.get('from_name')}_{c.get('message', '')[:30]}" for c in comments}
             while target_url and page_count < 10:
                 page_count += 1
                 try:
@@ -578,7 +618,7 @@ class NoApiFacebookTracker:
                     next_cmt_url = None
                     for a in soup.find_all("a"):
                         text = a.text.strip().lower()
-                        if any(kw in text for kw in ["xem thêm bình luận", "bình luận trước", "view more comments"]):
+                        if any(kw in text for kw in ["xem thêm bình luận", "bình luận trước", "view more comments", "các bình luận trước"]):
                             href = a.get("href", "")
                             if href and ("p=" in href or "story_fbid=" in href or post_id in href):
                                 next_cmt_url = "https://mbasic.facebook.com" + href if href.startswith("/") else href
@@ -587,16 +627,17 @@ class NoApiFacebookTracker:
                 except Exception:
                     break
 
-        if len(comments) == 0:
+        if len(comments) == 0 and not html_post:
             desk_post_url = post_url if "facebook.com" in post_url else f"https://www.facebook.com/{post_id}"
             try:
                 r_desk = self.session.get(desk_post_url, timeout=7)
                 if r_desk.status_code == 200:
-                    comments = self._extract_comments_from_html(r_desk.text, post_id=post_id)
+                    comments, official_cmts = self._extract_comments_from_html(r_desk.text, post_id=post_id)
             except Exception:
                 pass
 
-        return comments
+        return comments, max(len(comments), official_cmts)
+
 
     # -------------------------------------------------------------------------
     # 3. Cào Lượt Chia Sẻ (Shares)
@@ -888,22 +929,21 @@ class NoApiFacebookTracker:
             if check_likes:
                 reacts, total_rx = self.fetch_reactions(url, post_id, html_post=html_post)
                 post_data["reactions"] = reacts
-                post_data["likes_count"] = max(len(reacts), total_rx)
+                post_data["likes_count"] = total_rx if total_rx > 0 else len(reacts)
                 post_data["total_reactions"] = total_rx
 
             # 3. Cào Bình luận / Comments
             if check_comments:
-                if self.cookies and "c_user" in self.cookies:
-                    post_data["comments"] = self.fetch_comments(url, post_id)
-                else:
-                    post_data["comments"] = self._extract_comments_from_html(html_post, post_id=post_id)
-                post_data["comments_count"] = len(post_data["comments"])
+                cmts, total_cmts = self.fetch_comments(url, post_id, html_post=html_post)
+                post_data["comments"] = cmts
+                post_data["comments_count"] = total_cmts if total_cmts > 0 else len(cmts)
+                post_data["total_comments"] = total_cmts
 
             # 4. Cào Lượt chia sẻ / Shares
             if check_shares:
                 shrs, total_sh = self.fetch_shares(url, post_id, html_post=html_post)
                 post_data["shares"] = shrs
-                post_data["shares_count"] = max(len(shrs), total_sh)
+                post_data["shares_count"] = total_sh if total_sh > 0 else len(shrs)
                 post_data["total_shares"] = total_sh
 
             results.append(post_data)

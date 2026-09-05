@@ -14,6 +14,7 @@ import logging
 import random
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -568,11 +569,11 @@ class NoApiFacebookTracker:
         if self.cookies and "c_user" in self.cookies and (official_cmts == 0 or len(comments) < official_cmts):
             target_url: Optional[str] = f"https://mbasic.facebook.com/{post_id}"
             page_count = 0
-            seen_comment_keys = {f"{c.get('from_id')}_{c.get('from_name')}_{c.get('message', '')[:30]}" for c in comments}
-            while target_url and page_count < 10:
+            seen_comment_keys = {f"{c.get('from_id')}_{c.get('from_name')}_{(c.get('message') or '')[:30]}" for c in comments}
+            while target_url and page_count < 2:
                 page_count += 1
                 try:
-                    res = self.session.get(target_url, timeout=6)
+                    res = self.session.get(target_url, timeout=5)
                     if res.status_code != 200 or "login" in res.url.lower():
                         break
 
@@ -602,7 +603,7 @@ class NoApiFacebookTracker:
                         message = text_div.text.strip() if text_div else block.text.replace(author_name, "", 1).strip()
 
                         comment_id = block.get("id", f"cmt_{len(comments)+1}")
-                        dedup_key = f"{author_id}_{author_name}_{message[:30]}"
+                        dedup_key = f"{author_id}_{author_name}_{(message or '')[:30]}"
                         if dedup_key in seen_comment_keys:
                             continue
                         seen_comment_keys.add(dedup_key)
@@ -729,7 +730,7 @@ class NoApiFacebookTracker:
         return shares, max(len(shares), sh_count)
 
     # -------------------------------------------------------------------------
-    # 4. Cào Danh Sách Tất Cả Bài Viết Từ Fanpage/Trang
+    # 4. Cào Danh Sách Tất Cả Bài Viết Từ Fanpage/Trang (Multi-Source Discovery)
     # -------------------------------------------------------------------------
     def fetch_page_posts(self, page_url_or_id: str, limit: int = 0) -> List[Dict[str, Any]]:
         self.log(f"🔎 Bắt đầu quét bài viết trên Fanpage / Trang: {page_url_or_id}...", "info")
@@ -742,7 +743,21 @@ class NoApiFacebookTracker:
 
         desktop_url = normalize_fanpage_desktop_url(page_url_or_id)
 
-        # BƯỚC 1: Quét bằng Desktop Engine Siêu Tốc (~0.9s)
+        def add_candidate(pid: str, url: str, mo_ta: str = "") -> bool:
+            if not pid or pid == page_id or pid in seen_post_ids or len(pid) < 10:
+                return False
+            seen_post_ids.add(pid)
+            desc = mo_ta or f"Bài viết ID {pid}"
+            posts_found.append({
+                "post_id": pid,
+                "post_url": url,
+                "mo_ta": desc,
+                "time_text": "",
+            })
+            self.log(f"   ➕ Đã phát hiện bài viết ID {pid} ({desc[:45]}...)", "info")
+            return True
+
+        # NGUỒN 1: Quét Main Timeline Desktop (~0.8s)
         try:
             self.log(f"🌐 Đang kết nối Fanpage qua Desktop Engine: {desktop_url}...", "info")
             res_desk = self.session.get(desktop_url, timeout=8)
@@ -753,78 +768,91 @@ class NoApiFacebookTracker:
                 if page_name:
                     self.log(f"🏷️ Tên Trang nhận diện: {page_name}", "info")
 
+                if not page_id:
+                    pid_in_html = re.search(r'"page_id":"?(\d{10,30})"?', html_desk) or re.search(r'"userID":"?(\d{10,30})"?', html_desk)
+                    if pid_in_html:
+                        page_id = pid_in_html.group(1)
+
                 msg_m = re.search(r'"message":\{"text":"(.*?)"\}', html_desk)
                 default_caption = clean_unicode(msg_m.group(1)) if msg_m else ""
+                desc_main = default_caption[:90] + "..." if default_caption else f"Bài viết trên {page_name or 'Fanpage'}"
 
-                discovered_pids = []
                 # 1. Post ID chuẩn
                 for pid in re.findall(r'"post_id":"(\d+)"', html_desk):
-                    if pid != page_id and len(pid) >= 10 and pid not in seen_post_ids:
-                        seen_post_ids.add(pid)
-                        discovered_pids.append(pid)
+                    add_candidate(pid, f"https://www.facebook.com/{page_id}/posts/{pid}" if page_id else f"https://www.facebook.com/{pid}", desc_main)
+                    if limit > 0 and len(posts_found) >= limit:
+                        break
 
                 for sid in re.findall(r'"subscription_target_id":"(\d+)"', html_desk):
-                    if sid != page_id and len(sid) >= 10 and sid not in seen_post_ids:
-                        seen_post_ids.add(sid)
-                        discovered_pids.append(sid)
+                    add_candidate(sid, f"https://www.facebook.com/{page_id}/posts/{sid}" if page_id else f"https://www.facebook.com/{sid}", desc_main)
+                    if limit > 0 and len(posts_found) >= limit:
+                        break
 
                 for p_match in re.findall(r'/posts/(\d+)', html_desk):
-                    if p_match != page_id and len(p_match) >= 10 and p_match not in seen_post_ids:
-                        seen_post_ids.add(p_match)
-                        discovered_pids.append(p_match)
+                    add_candidate(p_match, f"https://www.facebook.com/{page_id}/posts/{p_match}" if page_id else f"https://www.facebook.com/{p_match}", desc_main)
+                    if limit > 0 and len(posts_found) >= limit:
+                        break
 
-                # 2. Ảnh bài đăng & Ảnh đại diện (Profile Photo Post)
-                for pp in re.findall(r'"profilePhoto":\{.*?"id":"(\d+)"', html_desk):
-                    if pp != page_id and len(pp) >= 10 and pp not in seen_post_ids:
-                        seen_post_ids.add(pp)
-                        discovered_pids.append(pp)
+                if len(posts_found) == 0:
+                    for pfbid in re.findall(r'story_fbid=(pfbid[a-zA-Z0-9]+)', html_desk):
+                        add_candidate(pfbid, f"https://www.facebook.com/permalink.php?story_fbid={pfbid}&id={page_id}", desc_main)
+                        if limit > 0 and len(posts_found) >= limit:
+                            break
 
-                # 3. Ảnh bìa (Cover Photo Post)
-                for cp in re.findall(r'"cover_photo":\{.*?"photo":\{.*?"id":"(\d+)"', html_desk):
-                    if cp != page_id and len(cp) >= 10 and cp not in seen_post_ids:
-                        seen_post_ids.add(cp)
-                        discovered_pids.append(cp)
-
-                # 4. Photo posts fbid (ví dụ photo/?fbid=...)
                 for fbid in re.findall(r'photo\/\?fbid=(\d+)', html_desk):
-                    if fbid != page_id and len(fbid) >= 10 and fbid not in seen_post_ids:
-                        seen_post_ids.add(fbid)
-                        discovered_pids.append(fbid)
+                    add_candidate(fbid, f"https://www.facebook.com/{page_id}/posts/{fbid}" if page_id else f"https://www.facebook.com/{fbid}", desc_main)
+                    if limit > 0 and len(posts_found) >= limit:
+                        break
 
-                # 5. Videos
-                for vid in re.findall(r'/videos/(\d+)', html_desk):
-                    if vid != page_id and len(vid) >= 10 and vid not in seen_post_ids:
-                        seen_post_ids.add(vid)
-                        discovered_pids.append(vid)
-
-                # 6. Story fbid
                 for sfbid in re.findall(r'story_fbid=(\d+)', html_desk):
-                    if sfbid != page_id and len(sfbid) >= 10 and sfbid not in seen_post_ids:
-                        seen_post_ids.add(sfbid)
-                        discovered_pids.append(sfbid)
-
-                for pid in discovered_pids:
-                    purl = f"https://www.facebook.com/{page_id}/posts/{pid}" if page_id else f"https://www.facebook.com/{pid}"
-                    desc = default_caption[:90] + "..." if default_caption else f"Bài viết trên {page_name or 'Fanpage'}"
-                    posts_found.append({
-                        "post_id": pid,
-                        "post_url": purl,
-                        "mo_ta": desc,
-                        "time_text": "",
-                    })
-                    self.log(f"   ➕ Đã phát hiện bài viết ID {pid} ({desc[:45]}...)", "info")
+                    add_candidate(sfbid, f"https://www.facebook.com/{page_id}/posts/{sfbid}" if page_id else f"https://www.facebook.com/{sfbid}", desc_main)
                     if limit > 0 and len(posts_found) >= limit:
                         break
 
         except Exception as e:
             self.log(f"⚠️ Quét Desktop Engine gặp lỗi: {e}", "warning")
 
-        # Nếu đã tìm thấy bài qua Desktop -> Trả về ngay, KHÔNG gọi mbasic để tránh timeout!
-        if posts_found:
-            self.log(f"🎯 Đã tìm thấy {len(posts_found)} bài viết trên Trang qua Desktop Engine.", "success")
-            return posts_found
+        # NGUỒN 2: Quét Timeline Photos Stream Album (Chứa 20+ bài viết đầy đủ nhất của Trang)
+        if page_id and (limit == 0 or len(posts_found) < limit):
+            stream_url = f"https://www.facebook.com/media/set/?set=pb.{page_id}.-2207520000"
+            try:
+                self.log(f"📸 Đang quét album bài viết đầy đủ của Trang...", "info")
+                r_stream = self.session.get(stream_url, timeout=8)
+                if r_stream.status_code == 200:
+                    for fbid in re.findall(r'[?&]fbid=(\d{12,25})', r_stream.text):
+                        add_candidate(fbid, f"https://www.facebook.com/{page_id}/posts/{fbid}", "Bài viết ảnh trên Trang")
+                        if limit > 0 and len(posts_found) >= limit:
+                            break
+            except Exception as e:
+                self.log(f"⚠️ Quét Timeline Photos Album: {e}", "warning")
 
-        # BƯỚC 2: Thử mbasic nếu Desktop không có bài (chỉ dùng cho Fanpage cũ)
+        # NGUỒN 3: Quét Tab Ảnh (/photos)
+        if page_id and (limit == 0 or len(posts_found) < limit):
+            photos_url = f"https://www.facebook.com/{page_id}/photos"
+            try:
+                r_photos = self.session.get(photos_url, timeout=8)
+                if r_photos.status_code == 200:
+                    for fbid in re.findall(r'[?&]fbid=(\d{12,25})', r_photos.text):
+                        add_candidate(fbid, f"https://www.facebook.com/{page_id}/posts/{fbid}", "Bài viết ảnh trên Trang")
+                        if limit > 0 and len(posts_found) >= limit:
+                            break
+            except Exception as e:
+                pass
+
+        # NGUỒN 4: Quét Tab Video (/videos)
+        if page_id and (limit == 0 or len(posts_found) < limit):
+            videos_url = f"https://www.facebook.com/{page_id}/videos"
+            try:
+                r_videos = self.session.get(videos_url, timeout=8)
+                if r_videos.status_code == 200:
+                    for vid in re.findall(r'/videos/(\d+)', r_videos.text):
+                        add_candidate(vid, f"https://www.facebook.com/{page_id}/videos/{vid}", "Video trên Trang")
+                        if limit > 0 and len(posts_found) >= limit:
+                            break
+            except Exception as e:
+                pass
+
+        # NGUỒN 5: Thử mbasic nếu Desktop không có bài (chỉ dùng cho Fanpage cũ)
         if not posts_found:
             target_mbasic_url = normalize_fanpage_mbasic_url(page_url_or_id)
             try:
@@ -836,37 +864,29 @@ class NoApiFacebookTracker:
                         if ("story_fbid=" in h or "/posts/" in h) and "comment" not in h and "like" not in h:
                             pid = extract_post_id_from_url(h)
                             if pid and pid != page_id and pid not in seen_post_ids:
-                                seen_post_ids.add(pid)
-                                posts_found.append({
-                                    "post_id": pid,
-                                    "post_url": f"https://www.facebook.com/{pid}",
-                                    "mo_ta": f"Bài viết ID {pid}",
-                                    "time_text": "",
-                                })
+                                add_candidate(pid, f"https://www.facebook.com/{pid}", f"Bài viết ID {pid}")
             except Exception:
                 pass
 
-        # BƯỚC 3: Nếu là link 1 bài viết cụ thể
+        # NGUỒN 6: Nếu là link 1 bài viết cụ thể
         if not posts_found:
             direct_pid = extract_post_id_from_url(page_url_or_id)
             if direct_pid:
                 self.log(f"ℹ️ Nhận diện trực tiếp link Bài viết ID: {direct_pid}", "info")
-                posts_found.append({
-                    "post_id": direct_pid,
-                    "post_url": page_url_or_id,
-                    "mo_ta": f"Bài viết ID {direct_pid}",
-                    "time_text": "",
-                })
+                add_candidate(direct_pid, page_url_or_id, f"Bài viết ID {direct_pid}")
+
+        if limit > 0 and len(posts_found) > limit:
+            posts_found = posts_found[:limit]
 
         if posts_found:
-            self.log(f"✅ Quét xong Fanpage! Tổng cộng thu thập được {len(posts_found)} bài viết.", "success")
+            self.log(f"✅ Quét xong Fanpage! Tổng cộng thu thập được {len(posts_found)} bài viết thực tế.", "success")
         else:
             self.log(f"❌ Không tìm thấy bài viết nào trên trang '{page_url_or_id}'.", "error")
 
         return posts_found
 
     # -------------------------------------------------------------------------
-    # 5. Quét Toàn Diện Một Hoặc Nhiều Bài Đăng (Fast Single-Pass Pipeline)
+    # 5. Quét Toàn Diện Một Hoặc Nhiều Bài Đăng (Fast Parallel Single-Pass Pipeline)
     # -------------------------------------------------------------------------
     def track_posts(
         self,
@@ -877,16 +897,17 @@ class NoApiFacebookTracker:
     ) -> List[Dict[str, Any]]:
         """
         Duyệt qua danh sách bài viết và cào dữ liệu tương tác thực tế 100%.
-        Tối ưu siêu tốc (Single-Pass Fetching): Chỉ tốn ~0.6s cho mỗi bài viết!
+        Tối ưu siêu tốc song song (Parallel Single-Pass Fetching): 10-25 bài chỉ trong ~3-5 giây!
         """
-        results = []
         total = len(post_urls)
+        self.log(f"⚡ Bắt đầu phân tích song song {total} bài viết...", "info")
 
-        for idx, item in enumerate(post_urls, 1):
+        def _process_single(idx_and_item: Tuple[int, Any]) -> Optional[Dict[str, Any]]:
+            idx, item = idx_and_item
             if isinstance(item, dict):
                 url = item.get("post_url", "").strip()
                 post_id = item.get("post_id") or extract_post_id_from_url(url)
-                initial_mo_ta = item.get("mo_ta", f"Bài viết ID {post_id}")
+                initial_mo_ta = item.get("mo_ta") or f"Bài viết ID {post_id}"
             else:
                 url = str(item).strip()
                 post_id = extract_post_id_from_url(url)
@@ -894,7 +915,7 @@ class NoApiFacebookTracker:
 
             if not url or not post_id:
                 self.log(f"❌ [{idx}/{total}] Không tìm thấy Post ID hợp lệ trong link: {url}", "error")
-                continue
+                return None
 
             self.log(f"📌 [{idx}/{total}] Đang xử lý bài viết ID: {post_id}", "info")
             post_data = {
@@ -907,7 +928,6 @@ class NoApiFacebookTracker:
                 "shares": [],
             }
 
-            # Lấy 1 lần duy nhất Desktop HTML của bài viết (~0.6s)
             desk_purl = url if "facebook.com" in url else f"https://www.facebook.com/{post_id}"
             html_post = ""
             try:
@@ -917,7 +937,6 @@ class NoApiFacebookTracker:
             except Exception as e:
                 self.log(f"⚠️ Kết nối bài viết {post_id}: {e}", "warning")
 
-            # 1. Trích xuất mô tả chi tiết nếu chưa có
             if html_post:
                 msg_m = re.search(r'"message":\{"text":"(.*?)"\}', html_post)
                 if msg_m:
@@ -925,14 +944,12 @@ class NoApiFacebookTracker:
                     post_data["mo_ta"] = txt[:90] + ("..." if len(txt) > 90 else "")
                     post_data["message"] = txt
 
-            # 2. Cào Cảm xúc / Reactions
             if check_likes:
                 reacts, total_rx = self.fetch_reactions(url, post_id, html_post=html_post)
                 post_data["reactions"] = reacts
                 post_data["likes_count"] = total_rx if total_rx > 0 else len(reacts)
                 post_data["total_reactions"] = total_rx
 
-            # 3. Cào Bình luận / Comments
             if check_comments:
                 cmts, total_cmts = self.fetch_comments(url, post_id, html_post=html_post)
                 post_data["comments"] = cmts
@@ -946,6 +963,13 @@ class NoApiFacebookTracker:
                 post_data["shares_count"] = total_sh if total_sh > 0 else len(shrs)
                 post_data["total_shares"] = total_sh
 
-            results.append(post_data)
+            return post_data
 
+        indexed_items = list(enumerate(post_urls, 1))
+        max_workers = min(5, len(indexed_items)) if len(indexed_items) > 0 else 1
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            raw_results = list(executor.map(_process_single, indexed_items))
+
+        results = [r for r in raw_results if r is not None]
         return results

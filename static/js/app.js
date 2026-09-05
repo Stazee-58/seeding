@@ -592,6 +592,7 @@ function renderCurrentPostTable(searchQuery = '') {
   if (!tableBody || !allPostsDetails[currentSelectedPostIndex]) return;
 
   const post = allPostsDetails[currentSelectedPostIndex];
+  const totalInteractions = (post.likes_count || 0) + (post.comments_count || 0) + (post.shares_count || 0);
   const list = [];
 
   // 1. Thêm lượt Like

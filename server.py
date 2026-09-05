@@ -434,9 +434,9 @@ def _handle_start_tracking():
     # =========================================================================
     user_engagement = {}
     for p in raw_posts_data:
-        pid = p["post_id"]
+        pid = str(p["post_id"])
         p_url = p.get("post_url", "")
-        mo_ta = p.get("mo_ta", pid)
+        mo_ta = p.get("mo_ta") or f"Bài ID {pid}"
 
         # 1. Thả tim / Like
         for r in p.get("reactions", []):
@@ -491,8 +491,8 @@ def _handle_start_tracking():
             user_engagement[key]["total_interactions"] += 1
             user_engagement[key]["commented_posts"].append({
                 "post_id": pid,
-                "message": c.get("message", ""),
-                "created_time": c.get("created_time", ""),
+                "message": c.get("message") or "",
+                "created_time": c.get("created_time") or "",
                 "mo_ta": mo_ta,
             })
 

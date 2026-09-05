@@ -369,7 +369,7 @@ def get_stranger_interactions(
         for c in comments:
             cid = str(c.get("from_id", "") or c.get("id", "")).strip()
             cname = str(c.get("from_name", "") or c.get("name", "")).strip()
-            msg = str(c.get("message", "")).strip()
+            msg = str(c.get("message") or "").strip()
 
             if _is_member(cid, cname):
                 continue

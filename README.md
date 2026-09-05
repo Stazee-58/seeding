@@ -14,7 +14,6 @@ Chạy siêu nhẹ, tương thích 100% với **Vercel Serverless**.
    - Quét toàn bộ Bình luận (bao gồm cả câu trả lời con / replies).
    - Quét Lượt chia sẻ công khai (Shares).
 3. **Phân Quyền & Kích Hoạt Tài Khoản (Admin Panel)**:
-   - Tài khoản Admin tạo sẵn: `nguyenhaonhien40@gmail.com` / Mật khẩu: `050810`.
    - Người dùng mới đăng ký phải được Admin vào trang `/admin` bấm **Kích hoạt** thì mới sử dụng được.
    - Hotline hỗ trợ: `0984113158`.
 4. **Đối Soát Thành Viên & Phát Hiện Người Lạ**:
